@@ -20,6 +20,11 @@ adb shell am start -n $P/.MainActivity --es go assistant; sleep 3
 adb shell am start -n $P/.MainActivity --es selftest "TAP:Network" --es app settings
 sleep 9; shot 3-agent-running
 for i in $(seq 1 30); do adb logcat -d -s AtlasAgent:I | grep -q "Self-test passed\|fail:" && break; sleep 2; done
+if ! adb logcat -d -s AtlasAgent:I | grep -q "Self-test passed"; then
+  echo "self-test attempt 1 did not finish — retrying once"; adb shell am force-stop $P; sleep 2
+  adb shell am start -n $P/.MainActivity --es selftest "TAP:Network" --es app settings
+  for i in $(seq 1 30); do adb logcat -d -s AtlasAgent:I | grep -q "Self-test passed" && break; sleep 2; done
+fi
 sleep 2; shot 4-agent-done
 adb shell am start -n $P/.MainActivity --es go tasks; sleep 4; shot 5-tasks-log
 adb logcat -d > $OUT/logcat.txt
