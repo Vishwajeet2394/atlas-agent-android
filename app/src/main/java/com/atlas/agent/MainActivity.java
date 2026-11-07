@@ -90,7 +90,13 @@ public class MainActivity extends Activity {
         s.setSupportMultipleWindows(false);
         s.setSafeBrowsingEnabled(true);
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+        s.setOffscreenPreRaster(true);
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
         web.addJavascriptInterface(new Bridge(), "Native");
+        if (BuildConfig.SIM) web.setWebChromeClient(new android.webkit.WebChromeClient() {
+            @Override public boolean onConsoleMessage(android.webkit.ConsoleMessage m) { android.util.Log.i("AtlasJS", m.messageLevel() + " " + m.message() + " @" + m.lineNumber()); return true; }
+        });
         web.setWebViewClient(new WebViewClient() {
             @Override public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) { return loader.shouldInterceptRequest(r.getUrl()); }
             @Override public void onPageFinished(WebView v, String url) { pageReady = true; deliverShared(); }
@@ -128,6 +134,19 @@ public class MainActivity extends Activity {
 
     private void handleIntent(Intent i) {
         if (i == null) return;
+        if (BuildConfig.SIM && i.hasExtra("sim_chat")) {
+            android.content.SharedPreferences.Editor e = Ai.prefs(this).edit();
+            if (i.hasExtra("sim_key")) e.putString("gemini_key", i.getStringExtra("sim_key")).putString("provider", "gemini");
+            if (i.hasExtra("sim_model")) e.putString("gemini_model", i.getStringExtra("sim_model"));
+            e.putString("sim_confirm", i.getStringExtra("sim_confirm") == null ? "confirm" : i.getStringExtra("sim_confirm"));
+            e.putString("sim_answers", i.getStringExtra("sim_answers") == null ? "" : i.getStringExtra("sim_answers"));
+            e.putString("user_name", "Vishwajeet").putString("user_home", "Gangapur Road, Nashik").putString("user_work", "College Road, Nashik");
+            e.apply();
+            try { pendingShared = new JSONObject().put("simchat", i.getStringExtra("sim_chat")).toString(); } catch (Exception ignored) { }
+            i.removeExtra("sim_chat");
+            deliverShared();
+            return;
+        }
         String goTab = i.getStringExtra("go");
         if (goTab != null) {
             try { pendingShared = new JSONObject().put("tab", goTab).toString(); } catch (Exception ignored) { }
@@ -272,6 +291,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void setPref(String k, String v) { Ai.prefs(MainActivity.this).edit().putString(k, v).apply(); }
         @JavascriptInterface public void setBool(String k, boolean v) { Ai.prefs(MainActivity.this).edit().putBoolean(k, v).apply(); }
         @JavascriptInterface public void setInt(String k, int v) { Ai.prefs(MainActivity.this).edit().putInt(k, v).apply(); }
+        @JavascriptInterface public boolean isSim() { return BuildConfig.SIM; }
         @JavascriptInterface public String version() { try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; } catch (Exception e) { return ""; } }
 
         // ---------- permissions ----------
@@ -417,6 +437,19 @@ public class MainActivity extends Activity {
         }
         @JavascriptInterface public void stopAgent() { AgentService.requestStop(); }
         @JavascriptInterface public String agentLog() { return AgentService.log(); }
+        @JavascriptInterface public boolean hasTrace() { return AgentService.traceFile(MainActivity.this).length() > 0; }
+        @JavascriptInterface public void shareTrace() {
+            runOnUiThread(() -> {
+                try {
+                    File src = AgentService.traceFile(MainActivity.this), dst = new File(getCacheDir(), "atlas-errand-log.txt");
+                    byte[] d = Media.readAll(src);
+                    try (FileOutputStream o = new FileOutputStream(dst)) { o.write(d == null ? new byte[0] : d); }
+                    Intent i = new Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_STREAM, uriFor(dst))
+                            .putExtra(Intent.EXTRA_SUBJECT, "Atlas errand log").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    startActivity(Intent.createChooser(i, "Share errand log"));
+                } catch (Exception e) { runJs("window.toast&&toast('No log yet')"); }
+            });
+        }
         @JavascriptInterface public boolean launch(String app) { String p = Apps.resolve(MainActivity.this, app); return p != null && Apps.launch(MainActivity.this, p); }
 
         /** Opens a filled-in compose screen. When send is true and the agent is on, the agent taps Send for you. */

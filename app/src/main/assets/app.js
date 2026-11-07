@@ -19,6 +19,26 @@ function parseJson(t) {
   return { say: t, actions: [] };
 }
 
+const SIM = !!(N.isSim && N.isSim());
+window.addEventListener("error", e => console.error("JS_ERROR " + e.message + " @" + e.lineno));
+window.addEventListener("unhandledrejection", e => console.error("JS_ERROR unhandled " + (e.reason && e.reason.message)));
+// Scenario simulations: send the message, press the buttons a user would, then report.
+async function simRun(text) {
+  S.chat = []; saveChat(); render();
+  await send(text);
+  const m = S.chat[S.chat.length - 1]; let agent = 0;
+  for (const [i, c] of (m && m.cards ? m.cards.entries() : [])) {
+    console.log("ATLAS_CARD " + JSON.stringify({ kind: c.kind, text: c.text, ok: c.ok, total: c.total, to: c.to, subject: c.subject, items: (c.items || []).map(f => f.n), choices: (c.choices || []).map(x => x.number), groups: (c.groups || []).map(g => g.name) }));
+    const b = q => document.querySelector(`[data-a="${q}"][data-m="${m.id}"][data-c="${i}"]`);
+    if (c.kind === "email" && b("emailSend")) { b("emailSend").click(); agent++; }
+    if (c.kind === "contact" && b("contactGo")) { b("contactGo").click(); if (c.mode === "whatsapp") agent++; }
+    if (c.kind === "organize" && b("applyOrg")) b("applyOrg").click();
+    if (c.kind === "tasks" && c.state !== "ready") agent++;
+  }
+  await new Promise(r => setTimeout(r, 1500));
+  console.log("ATLAS_DONE tasks=" + agent);
+}
+
 // ---------------- helpers ----------------
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -351,8 +371,10 @@ async function send(text) {
     if (tasks.length) await queueTasks(reply, tasks.map(t => ({ app: t.app || "", goal: t.goal || text })));
     if (!reply.text && !(reply.cards || []).length) { reply.text = "Done."; updateMsg(reply); }
     saveChat();
+    if (SIM) { console.log("ATLAS_ACTIONS " + JSON.stringify(acts)); console.log("ATLAS_REPLY " + (reply.text || "").replace(/\n/g, " ")); }
   } catch (e) {
     reply.typing = false; reply.error = true; reply.text = "⚠️ " + e.message; updateMsg(reply); saveChat();
+    if (SIM) console.log("ATLAS_ERROR " + e.message);
   }
 }
 function history(n = 10) {
@@ -783,7 +805,7 @@ function viewTasks() {
   const R = J(N.routines(), []);
   h += `<div class="row" style="margin:22px 4px 10px"><h2 style="margin:0;flex:1">Reminders & routines</h2><button class="btn tonal sm" data-a="newRoutine">${ic("plus", "s")} New</button></div>`;
   h += `<div class="card tight">${R.length ? R.map(r => `<div class="li"><span class="ico">${ic(r.kind === "remind" ? "bell" : "repeat")}</span><div class="grow" data-a="editRoutine" data-id="${esc(r.id)}"><div class="tt">${esc(r.name || r.text || r.prompt)}</div><div class="t2" style="white-space:normal">${esc(routineWhen(r))}${r.on && r.next ? " · next " + esc(ago2(r.next)) : r.on ? "" : " · off"}${r.kind !== "remind" ? " · " + (r.auto ? "runs by itself" : "asks first") : ""}</div></div><label class="switch"><input type="checkbox" data-a="togRoutine" data-id="${esc(r.id)}" ${r.on ? "checked" : ""}><span></span></label></div>`).join("") : `<div class="empty">${ic("repeat")}<div>Nothing scheduled. Try “remind me to call the CA every Friday at 5 pm” or “every 1st at 10 am recharge my Jio number”.</div></div>`}</div>`;
-  h += `<h2>Activity</h2><div class="card tight" id="log">${logHtml()}</div>`;
+  h += `<div class="row" style="margin:22px 4px 10px"><h2 style="margin:0;flex:1">Activity</h2>${N.hasTrace() ? `<button class="btn ghost sm" data-a="shareTrace">${ic("share", "s")} Share errand log</button>` : ""}</div><div class="card tight" id="log">${logHtml()}</div>`;
   return h;
 }
 function ago2(t) { const d = new Date(t), now = new Date(), tm = d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }); const days = Math.round((new Date(d.toDateString()) - new Date(now.toDateString())) / 86400000); return days === 0 ? "today " + tm : days === 1 ? "tomorrow " + tm : d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }) + " " + tm; }
@@ -885,7 +907,8 @@ function viewSettings() {
   <h2>Agent</h2><div class="card tight">
     <div class="li"><div class="grow"><div class="tt">Start errands right away</div><div class="t2" style="white-space:normal">Off: show the plan and wait for Start</div></div><label class="switch"><input type="checkbox" data-a="tog" data-k="autostart" ${p.autostart !== "0" ? "checked" : ""}><span></span></label></div>
     <div class="li"><div class="grow"><div class="tt">Send screenshots to the AI</div><div class="t2" style="white-space:normal">More accurate in apps with unlabeled buttons</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="screenshots" ${p.screenshots !== false ? "checked" : ""}><span></span></label></div>
-    <div class="li"><div class="grow"><div class="tt">Step limit per errand</div></div><select data-a="steps" style="width:auto">${[25, 45, 70].map(n => `<option ${+(p.max_steps || 45) === n ? "selected" : ""}>${n}</option>`).join("")}</select></div>
+    <div class="li"><div class="grow"><div class="tt">Step limit per errand</div></div><select data-a="steps" style="width:auto">${[45, 70, 100].map(n => `<option ${+(p.max_steps || 70) === n ? "selected" : ""}>${n}</option>`).join("")}</select></div>
+    <div class="li"><div class="grow"><div class="tt">Careful mode for shopping & food apps</div><div class="t2" style="white-space:normal">The AI thinks a little longer on each step in Swiggy, Zomato, Instamart, Amazon… Slower, more accurate.</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="careful" ${p.careful !== false ? "checked" : ""}><span></span></label></div>
   </div>
   <h2>Look</h2><div class="card">
     <div class="seg">${["system", "light", "dark"].map(m => `<button data-a="theme" data-k="${m}" aria-pressed="${(p.theme || "system") === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div>
@@ -951,6 +974,7 @@ document.addEventListener("click", async e => {
       go("assistant"); addMsg({ role: "user", text: QUICK[+el.dataset.i][1] }); const m = addMsg({ role: "ai", text: "", cards: [] }); queueTasks(m, [{ app: q.app, goal: q.goal }]); break;
     }
     case "newRoutine": routineSheet(); break;
+    case "shareTrace": N.shareTrace(); break;
     case "editRoutine": { const r = J(N.routines(), []).find(x => x.id === el.dataset.id); if (r) routineSheet(r); break; }
     case "notifAccess": N.openNotifAccess(); break;
     case "permContacts": call("askPerm", "contacts").then(() => toast("Thanks — ask again")).catch(() => toast("Contacts permission was denied")); break;
@@ -1087,7 +1111,7 @@ window.atlasBack = () => {
 };
 window.atlasResume = () => { appsCache = null; syncRun(); if (!sheetEl && S.tab !== "assistant") render(); else if (S.tab === "assistant" && !S.chat.length) render(); else if (S.tab === "assistant") { const m = S.run && S.chat.find(x => x.id === S.run.msgId); if (m) updateMsg(m); } if (N.hasFiles() && !J(N.stats(), {}).files && !J(N.stats(), {}).scanning) call("scan").then(() => S.tab === "files" && render()); };
 window.atlasIndexed = () => { if (S.tab === "files" && !sheetEl) render(); };
-window.atlasShared = o => { if (o.tab && TABS.includes(o.tab)) { go(o.tab); return; } go("assistant"); if (o.run) { setTimeout(() => send(o.run), 300); return; } if (o.path) { S.pend = [o.path]; renderPend(); } if (o.text) { $("#q").value = o.text; autosize(); } $("#q").focus(); };
+window.atlasShared = o => { if (o.simchat != null) { go("assistant"); simRun(o.simchat); return; } if (o.tab && TABS.includes(o.tab)) { go(o.tab); return; } go("assistant"); if (o.run) { setTimeout(() => send(o.run), 300); return; } if (o.path) { S.pend = [o.path]; renderPend(); } if (o.text) { $("#q").value = o.text; autosize(); } $("#q").focus(); };
 document.addEventListener("pointerdown", e => { // long-press to start selecting in file lists
   const el = e.target.closest('.view [data-a="file"]'); if (!el || S.tab !== "files" || !["list", "browse"].includes(S.files.mode)) return;
   const x0 = e.clientX, y0 = e.clientY;
@@ -1120,6 +1144,6 @@ function mockNative() {
     move: () => '{"ok":true,"path":"x"}', rename: () => '{"ok":true,"path":"x"}', mkdir: () => '{"ok":true}', trash: () => '{"ok":true,"path":"x"}', putContent() { }, clearContent() { }, open() { }, share() { },
     aiReady: () => true, ai(req, id) { setTimeout(() => atlasCb(id, true, JSON.stringify({ say: "On it — opening Uber.", actions: [{ type: "phone_task", app: "uber", goal: "Book an Uber Go from current location to Nashik Road station" }, { type: "email", to: "manager@sbi.co.in", subject: "Leave on Monday", body: "Dear Sir,\n\nI request leave on Monday.\n\nRegards,\nVishwajeet" }] })), 600); },
     device: j => JSON.stringify({ ok: true, text: "Done: " + JSON.parse(j).op }), contacts: q => JSON.stringify({ perm: true, items: [{ name: q + " Patil", number: "+91 98220 12345", type: "mobile" }] }), hasPerm: () => false, askPerm(n, id) { atlasCb(id, true, "granted"); }, notifAccess: () => false, openNotifAccess() { }, notifications: () => "[]", routines: () => JSON.stringify(window._R || []), saveRoutine(j) { const o = JSON.parse(j); o.id = o.id || "r1"; o.next = Date.now() + 86400000; window._R = [o]; return JSON.stringify(o); }, deleteRoutine() { window._R = []; },
-    agentBusy: () => false, runTasks: () => "off", stopAgent() { }, agentLog: () => "[]", launch: () => false, email: () => "opened",
+    hasTrace: () => false, shareTrace() { }, agentBusy: () => false, runTasks: () => "off", stopAgent() { }, agentLog: () => "[]", launch: () => false, email: () => "opened",
   };
 }

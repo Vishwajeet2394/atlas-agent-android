@@ -115,10 +115,10 @@ final class Ai {
         // Gemini's thinking counts toward maxOutputTokens, so never send a small cap; keep thinking short for snappy replies.
         JSONObject gc = new JSONObject().put("maxOutputTokens", Math.max(8192, req.optInt("maxTokens", 4096)));
         if (req.optBoolean("json")) gc.put("responseMimeType", "application/json");
-        String level = req.optBoolean("deep") ? null : "low";
+        String level = req.optBoolean("deep") ? null : req.optString("think", "low");
         boolean thinkOk = p.getBoolean("gemini_thinking_ok:" + model, true);
         if (level != null && thinkOk && model.startsWith("gemini-3")) gc.put("thinkingConfig", new JSONObject().put("thinkingLevel", level));
-        else if (level != null && thinkOk && model.contains("2.5-flash")) gc.put("thinkingConfig", new JSONObject().put("thinkingBudget", 0));
+        else if (level != null && thinkOk && model.contains("2.5-flash")) gc.put("thinkingConfig", new JSONObject().put("thinkingBudget", "low".equals(level) ? 0 : 2048));
         body.put("generationConfig", gc);
         String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
         JSONObject r;

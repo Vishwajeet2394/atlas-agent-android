@@ -8,7 +8,9 @@ android {
         targetSdk 34
         versionCode = Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER") ?: "1")
         versionName = "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
+        buildConfigField "boolean", "SIM", "false"
     }
+    buildFeatures { buildConfig true }
     signingConfigs {
         release {
             storeFile file("atlas-release.jks")
@@ -21,6 +23,12 @@ android {
         release {
             minifyEnabled false
             signingConfig signingConfigs.release
+        }
+        // test-only build for the scenario simulations: auto-answers Confirm/questions. Never published.
+        sim {
+            initWith release
+            buildConfigField "boolean", "SIM", "true"
+            matchingFallbacks = ["release"]
         }
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }

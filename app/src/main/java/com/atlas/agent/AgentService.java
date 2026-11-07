@@ -88,6 +88,18 @@ public class AgentService extends AccessibilityService {
 
     static boolean on() { return I != null; }
 
+    static final java.util.Set<String> SHOP_APPS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "in.swiggy.android", "in.swiggy.android.instamart", "com.application.zomato", "com.grofers.customer", "com.zeptoconsumerapp",
+            "in.amazon.mShop.android.shopping", "com.flipkart.android", "com.myntra.android", "com.meesho.supply", "com.ril.ajio", "com.fsn.nykaa",
+            "com.jpl.jiomart", "com.bigbasket.mobileapp", "com.ubercab", "com.olacabs.customer", "com.rapido.passenger",
+            "com.phonepe.app", "net.one97.paytm", "com.google.android.apps.nbu.paisa.user", "com.bt.bms", "cris.org.in.prs.ima", "in.redbus.android"));
+
+    // ---- step-by-step log of the last errand run, shareable from the Tasks tab
+    static java.io.File traceFile(Context c) { return new java.io.File(c.getFilesDir(), "agent-trace.txt"); }
+    private void trace(String line) {
+        try (java.io.FileWriter w = new java.io.FileWriter(traceFile(this), true)) { w.write(line); w.write('\n'); } catch (Exception ignored) { }
+    }
+
     boolean global(int action, long delayMs) {
         if (delayMs > 0) sleep(delayMs);
         return performGlobalAction(action);
@@ -114,6 +126,7 @@ public class AgentService extends AccessibilityService {
         AgentService s = I;
         if (s == null || busy) return false;
         stop = false; busy = true;
+        try (java.io.FileWriter w = new java.io.FileWriter(traceFile(s), false)) { w.write("Atlas errand log · " + new java.util.Date() + " · provider " + Ai.provider(s) + "\n"); } catch (Exception ignored) { }
         new Thread(() -> {
             try {
                 for (int i = 0; i < tasks.length() && !stop; i++) {
@@ -156,14 +169,20 @@ public class AgentService extends AccessibilityService {
             sleep(2500);
             return "fail";
         }
+        if (pkg != null && app.toLowerCase(Locale.ROOT).contains("instamart") && pkg.equals("in.swiggy.android"))
+            goal = "Open Instamart inside the Swiggy app first (the Instamart tile/tab), then: " + goal;
+        boolean shopping = pkg != null && SHOP_APPS.contains(pkg);
+        trace("\n==== TASK " + (idx + 1) + ": " + goal + "  [" + (pkg == null ? app : pkg) + "]");
         if (pkg != null && !t.optBoolean("nolaunch")) { Apps.launch(this, pkg); waitForPackage(pkg, 8000); }
         else sleep(600);
         List<String> history = new ArrayList<>();
         List<String> answers = new ArrayList<>();
-        int maxSteps = Ai.prefs(this).getInt("max_steps", 45);
+        int maxSteps = Ai.prefs(this).getInt("max_steps", 70);
         boolean useShot = Ai.prefs(this).getBoolean("screenshots", true);
         String lastSig = ""; int same = 0, badJson = 0;
-        boolean approved = false, wantShot = true, lastFailed = false;
+        boolean wantShot = true, lastFailed = false;
+        int approvedUntil = -1;
+        String notes = "";
         for (int step = 1; step <= maxSteps; step++) {
             if (stop) return "stop";
             waitIdle(450, 3000);
@@ -171,14 +190,16 @@ public class AgentService extends AccessibilityService {
             if (sc == null) { history.add("(screen unreadable, waited)"); sleep(1500); continue; }
             if (sc.text.equals(lastSig)) same++; else { same = 0; lastSig = sc.text; }
             // screenshots cost time: send one when the element list is thin, the screen is new to us, or we're stuck
-            boolean shot = useShot && (wantShot || lastFailed || same >= 1 || sc.labeled < 12 || step == 1);
+            boolean shot = useShot && (shopping || wantShot || lastFailed || same >= 1 || sc.labeled < 12 || step == 1);
             if (shot) sc.shot = screenshot();
             wantShot = false; lastFailed = false;
             status(label + " · step " + step, "Looking at " + label(sc.pkg) + "…");
             JSONObject req = new JSONObject().put("system", SYSTEM).put("json", true).put("maxTokens", 1200);
+            if (shopping && Ai.prefs(this).getBoolean("careful", true)) req.put("think", "medium");
             StringBuilder u = new StringBuilder();
             u.append("GOAL: ").append(goal).append('\n');
             if (!answers.isEmpty()) u.append("USER ANSWERS: ").append(String.join(" | ", answers)).append('\n');
+            if (!notes.isEmpty()) u.append("YOUR NOTES SO FAR: ").append(notes).append('\n');
             u.append("STEP ").append(step).append(" of max ").append(maxSteps).append('\n');
             if (!history.isEmpty()) {
                 u.append("RECENT ACTIONS:\n");
@@ -210,7 +231,9 @@ public class AgentService extends AccessibilityService {
                 history.add("(your last reply was not valid JSON — reply with one JSON object only)");
                 continue;
             }
+            if (a.has("notes") && !a.optString("notes").trim().isEmpty()) notes = a.optString("notes").trim();
             String act = a.optString("action", "wait").toLowerCase(Locale.ROOT);
+            trace("-- step " + step + " · " + sc.pkg + (sc.shot != null ? " · screenshot" : "") + "\n" + (sc.text.length() > 3500 ? sc.text.substring(0, 3500) + "…\n" : sc.text) + ">> " + raw.trim());
             String thought = a.optString("thought", "");
             int id = a.optInt("id", -1);
             Node n = id >= 0 && id < sc.nodes.size() ? sc.nodes.get(id) : null;
@@ -219,8 +242,8 @@ public class AgentService extends AccessibilityService {
                 case "tap": case "click": case "long_press": {
                     if (n == null) { history.add("tap failed: no element [" + id + "]"); break; }
                     boolean sensitive = SENSITIVE.matcher(n.label.trim()).find() && !(allow.equals("send") && n.label.trim().toLowerCase(Locale.ROOT).startsWith("send"));
-                    if (sensitive && approved) { // the user already said yes to this step
-                        approved = false;
+                    if (sensitive && step <= approvedUntil) { // the user already said yes a moment ago (e.g. "Proceed to pay" then "Pay ₹249")
+                        approvedUntil = -1;
                         status(label + " · step " + step, "Tapping " + q(n.label));
                         boolean ok = tap(n);
                         history.add((ok ? "tapped (approved)" : "tap FAILED on") + " [" + id + "] " + q(n.label));
@@ -232,6 +255,7 @@ public class AgentService extends AccessibilityService {
                         if (!"ok".equals(r)) return r;
                         history.add("user CONFIRMED and tapped [" + id + "] " + q(n.label));
                         allow = "send".equals(allow) ? "" : allow;
+                        approvedUntil = step + 4;
                         break;
                     }
                     status(label + " · step " + step, short_(thought, "Tapping " + q(n.label)));
@@ -278,7 +302,7 @@ public class AgentService extends AccessibilityService {
                 case "confirm": {
                     String r = confirm(label, a.optString("summary", "Ready for the final step."), n, sc);
                     if (!"ok".equals(r)) return r;
-                    if (n == null) approved = true; // no button given: let the next final-step tap through without asking twice
+                    approvedUntil = step + 4; // one OK covers the next payment screen too
                     history.add(n != null ? "user CONFIRMED and tapped [" + id + "] " + q(n.label) : "user CONFIRMED — now tap the final button");
                     break;
                 }
@@ -299,7 +323,31 @@ public class AgentService extends AccessibilityService {
                 }
                 default: history.add("unknown action " + act); sleep(400);
             }
-            sleep(350);
+            // follow-up actions planned in the same reply — saves a full AI round trip each
+            JSONArray then = a.optJSONArray("then");
+            if (then != null && !stop && !lastFailed && ("tap".equals(act) || "type".equals(act) || "scroll".equals(act) || "back".equals(act))) {
+                for (int k = 0; k < Math.min(3, then.length()) && !stop; k++) {
+                    JSONObject f = then.optJSONObject(k);
+                    if (f == null) break;
+                    String fa = f.optString("action"), want = f.optString("label", "").trim();
+                    if (!("tap".equals(fa) || "type".equals(fa)) || want.isEmpty()) break;
+                    waitIdle(350, 2200);
+                    Screen s2 = capture(false);
+                    Node hit = s2 == null ? null : findByLabel(s2, want);
+                    if (hit == null) { history.add("follow-up skipped: " + q(want) + " not on screen"); break; }
+                    if (SENSITIVE.matcher(hit.label.trim()).find() && step > approvedUntil) { history.add("follow-up stopped before final step " + q(hit.label)); break; }
+                    boolean ok;
+                    if ("type".equals(fa)) { ok = type(hit, f.optString("text", "")); if (ok && f.optBoolean("enter")) { sleep(250); pressEnter(); } }
+                    else ok = tap(hit);
+                    event("step", ("type".equals(fa) ? "Typing " + q(f.optString("text")) : "Tapping " + q(hit.label)), new JSONObject().put("task", idx).put("action", fa).put("step", step));
+                    status(label + " · step " + step, ("type".equals(fa) ? "Typing " + q(f.optString("text")) : "Tapping " + q(hit.label)));
+                    history.add((ok ? "then " + ("type".equals(fa) ? "typed " + q(f.optString("text")) + " into " : "tapped ") : "then FAILED on ") + q(hit.label));
+                    trace("   then " + fa + " " + q(want) + (ok ? " ✓" : " ✗"));
+                    if (!ok) { lastFailed = true; break; }
+                    sleep(250);
+                }
+            }
+            sleep(250);
         }
         event("fail", "Stopped after the step limit without finishing.", new JSONObject().put("task", idx));
         return "fail";
@@ -314,7 +362,7 @@ public class AgentService extends AccessibilityService {
     private String confirm(String label, String summary, Node n, Screen sc) throws Exception {
         event("confirm", summary, null);
         vibrate(70);
-        String r = waitFor(() -> showConfirm(label, summary), 10 * 60);
+        String r = waitFor(() -> showConfirm(label, summary), 10 * 60, "confirm");
         if ("confirm".equals(r)) {
             if (n != null) {
                 status(label, "Confirmed — tapping " + q(n.label));
@@ -333,13 +381,27 @@ public class AgentService extends AccessibilityService {
 
     private String ask(String label, String question) {
         vibrate(40);
-        return waitFor(() -> showAsk(label, question), 10 * 60);
+        return waitFor(() -> showAsk(label, question), 10 * 60, "ask");
     }
 
-    private String waitFor(Runnable show, int seconds) {
+    private String waitFor(Runnable show, int seconds, String kind) {
         reply.set(null);
         waitReply = new CountDownLatch(1);
         ui.post(show);
+        if (BuildConfig.SIM) { // scenario simulations: answer like a user would, after a moment
+            android.content.SharedPreferences p = Ai.prefs(this);
+            String ans;
+            if ("confirm".equals(kind)) ans = p.getString("sim_confirm", "confirm");
+            else {
+                String q = p.getString("sim_answers", "");
+                String[] parts = q.isEmpty() ? new String[0] : q.split("\\|", 2);
+                ans = parts.length > 0 && !parts[0].isEmpty() ? parts[0] : "Use your best judgement and continue.";
+                p.edit().putString("sim_answers", parts.length > 1 ? parts[1] : "").apply();
+            }
+            android.util.Log.i("AtlasAgent", "sim-answer: " + kind + " -> " + ans);
+            final String a2 = ans;
+            ui.postDelayed(() -> answer(a2), 1200);
+        }
         try { if (!waitReply.await(seconds, TimeUnit.SECONDS)) return "stop"; } catch (InterruptedException e) { return "stop"; }
         String r = reply.get();
         ui.post(this::compact);
@@ -349,7 +411,7 @@ public class AgentService extends AccessibilityService {
     private void answer(String r) { reply.set(r); CountDownLatch l = waitReply; if (l != null) l.countDown(); }
 
     // ============================================================ screen reading
-    static final class Node { AccessibilityNodeInfo n; String label; String cls; Rect b; boolean click, edit, scroll; }
+    static final class Node { AccessibilityNodeInfo n; String label = "", cls = "View", flags = ""; Rect b; boolean click, edit, scroll, check, own, covered; }
     static final class Screen { List<Node> nodes = new ArrayList<>(); String text = ""; String pkg = ""; String shot; int w, h, labeled; }
 
     private boolean ours(AccessibilityNodeInfo r) { return r != null && r.getPackageName() != null && getPackageName().contentEquals(r.getPackageName()); }
@@ -398,53 +460,120 @@ public class AgentService extends AccessibilityService {
         DisplayMetrics dm = getResources().getDisplayMetrics();
         s.w = dm.widthPixels; s.h = dm.heightPixels;
         s.pkg = root.getPackageName() == null ? "" : root.getPackageName().toString();
+        List<Node> all = new ArrayList<>();
+        walk(root, all, 0, new int[]{0});
+        // Keep what matters: inputs and buttons first, then plain text — then show them in reading order.
+        List<Node> pick = new ArrayList<>();
+        int interactive = 0;
+        for (Node x : all) if (x.edit || x.click || x.scroll || x.check) { if (interactive++ < 170) pick.add(x); }
+        for (Node x : all) { if (pick.size() >= 240) break; if (!(x.edit || x.click || x.scroll || x.check) && !x.covered) pick.add(x); }
+        pick.sort((a, b) -> { int ra = a.b.top / 24, rb = b.b.top / 24; return ra != rb ? Integer.compare(ra, rb) : Integer.compare(a.b.left, b.b.left); });
         StringBuilder sb = new StringBuilder();
-        walk(root, s, sb, 0);
+        for (Node x : pick) {
+            int idx = s.nodes.size();
+            s.nodes.add(x);
+            if (x.own) s.labeled++;
+            sb.append('[').append(idx).append("] ").append(x.cls).append(' ').append('"').append(x.label).append('"');
+            if (!x.flags.isEmpty()) sb.append(" {").append(x.flags).append('}');
+            sb.append(" @").append(x.b.centerX()).append(',').append(x.b.centerY()).append('\n');
+        }
+        if (all.size() > pick.size()) sb.append("(").append(all.size() - pick.size()).append(" less important elements hidden — scroll or look if needed)\n");
         if (s.nodes.isEmpty()) sb.append("(no readable elements — rely on the screenshot)\n");
         s.text = sb.toString();
         if (withShot) s.shot = screenshot();
         return s;
     }
 
-    private void walk(AccessibilityNodeInfo n, Screen s, StringBuilder sb, int depth) {
-        if (n == null || depth > 60 || s.nodes.size() >= 220) return;
+    private static String clean(CharSequence c) { return c == null ? "" : c.toString().replace('\n', ' ').replaceAll("\\s+", " ").trim(); }
+
+    /** Text found inside a node (for buttons that have no label of their own), skipping one child. */
+    private static void texts(AccessibilityNodeInfo n, AccessibilityNodeInfo skip, StringBuilder sb, int[] budget, int depth) {
+        if (n == null || budget[0] <= 0 || depth > 8 || sb.length() > 110) return;
+        if (skip != null && n.equals(skip)) return;
+        budget[0]--;
+        String t = clean(n.getText());
+        if (t.isEmpty()) t = clean(n.getContentDescription());
+        if (!t.isEmpty() && n.isVisibleToUser() && sb.indexOf(t) < 0) { if (sb.length() > 0) sb.append(" · "); sb.append(t); }
+        for (int i = 0; i < n.getChildCount(); i++) texts(n.getChild(i), skip, sb, budget, depth + 1);
+    }
+
+    private void walk(AccessibilityNodeInfo n, List<Node> out, int depth, int[] seen) {
+        if (n == null || depth > 70 || seen[0]++ > 2500) return;
         if (!n.isVisibleToUser()) return;
         Rect b = new Rect();
         n.getBoundsInScreen(b);
-        String text = n.getText() == null ? "" : n.getText().toString().trim();
-        String desc = n.getContentDescription() == null ? "" : n.getContentDescription().toString().trim();
-        String hint = n.getHintText() == null ? "" : n.getHintText().toString().trim();
+        String text = clean(n.getText()), desc = clean(n.getContentDescription()), hint = clean(n.getHintText());
         String label = !text.isEmpty() ? text : !desc.isEmpty() ? desc : hint;
         if (!desc.isEmpty() && !text.isEmpty() && !desc.equals(text)) label = text + " — " + desc;
-        if (label.isEmpty() && n.getViewIdResourceName() != null) {
-            String id = n.getViewIdResourceName(); int k = id.indexOf('/'); if (k >= 0) id = id.substring(k + 1);
-            label = "#" + id;
-        }
-        label = label.replace('\n', ' ');
-        if (label.length() > 120) label = label.substring(0, 117) + "…";
+        boolean own = !label.isEmpty();
         boolean click = n.isClickable() || n.isLongClickable(), edit = n.isEditable(), scroll = n.isScrollable(), check = n.isCheckable();
-        boolean useful = b.width() > 2 && b.height() > 2 && (click || edit || scroll || check || !text.isEmpty() || !desc.isEmpty());
-        if (useful) {
+        if (b.width() > 2 && b.height() > 2 && (click || edit || scroll || check || own)) {
             Node x = new Node();
-            x.n = n; x.label = label; x.b = b; x.click = click; x.edit = edit; x.scroll = scroll;
+            x.n = n; x.b = b; x.click = click; x.edit = edit; x.scroll = scroll; x.check = check; x.own = own;
+            if ((click || check) && label.isEmpty()) {
+                // an unlabeled button/card: describe it by the text inside it ("Chicken Biryani · ₹249 · ★4.3")
+                StringBuilder sb = new StringBuilder(); texts(n, null, sb, new int[]{40}, 0);
+                label = sb.toString();
+                x.covered = false;
+            }
+            if ((click || check) && label.length() > 0 && label.length() <= 14 && !edit) {
+                // short repeated buttons like "ADD", "+", "−": say which item they belong to
+                AccessibilityNodeInfo p = n.getParent();
+                for (int up = 0; up < 3 && p != null; up++) {
+                    StringBuilder sb = new StringBuilder(); texts(p, n, sb, new int[]{30}, 0);
+                    String ctx = sb.toString().replace(label, "").replaceAll("^[ ·]+|[ ·]+$", "");
+                    if (ctx.length() >= 3) { label = label + " (for: " + (ctx.length() > 80 ? ctx.substring(0, 77) + "…" : ctx) + ")"; break; }
+                    p = p.getParent();
+                }
+            }
+            if (label.isEmpty() && n.getViewIdResourceName() != null) {
+                String id = n.getViewIdResourceName(); int k = id.indexOf('/'); if (k >= 0) id = id.substring(k + 1);
+                label = "#" + id;
+            }
+            if (label.isEmpty() && (click || check)) label = "(unlabeled " + (b.width() < 200 && b.height() < 200 ? "icon" : "area") + ")";
+            if (label.length() > 140) label = label.substring(0, 137) + "…";
+            x.label = label;
             CharSequence cn = n.getClassName();
             String cls = cn == null ? "View" : cn.toString(); int dot = cls.lastIndexOf('.'); if (dot >= 0) cls = cls.substring(dot + 1);
             x.cls = cls;
-            int idx = s.nodes.size();
-            if (!text.isEmpty() || !desc.isEmpty()) s.labeled++;
-            s.nodes.add(x);
-            sb.append('[').append(idx).append("] ").append(cls).append(' ').append('"').append(label).append('"');
             List<String> fl = new ArrayList<>();
             if (click) fl.add("tap");
-            if (edit) fl.add("edit" + (n.isFocused() ? ",focused" : ""));
-            if (scroll) fl.add("scroll");
+            if (edit) { String cur = text.equals(hint) ? "" : text; fl.add("edit" + (n.isFocused() ? ",focused" : "") + (cur.isEmpty() ? ",empty" : "")); }
+            if (scroll) {
+                boolean h = false, v = false;
+                for (AccessibilityNodeInfo.AccessibilityAction a : n.getActionList()) {
+                    int id = a.getId();
+                    if (id == android.R.id.accessibilityActionScrollLeft || id == android.R.id.accessibilityActionScrollRight) h = true;
+                    if (id == android.R.id.accessibilityActionScrollDown || id == android.R.id.accessibilityActionScrollUp) v = true;
+                }
+                fl.add(h && !v ? "scroll-horizontal" : "scroll");
+            }
             if (check) fl.add(n.isChecked() ? "checked" : "unchecked");
             if (n.isSelected()) fl.add("selected");
             if (!n.isEnabled()) fl.add("disabled");
-            if (!fl.isEmpty()) sb.append(" {").append(String.join(",", fl)).append('}');
-            sb.append(" @").append(b.centerX()).append(',').append(b.centerY()).append('\n');
+            x.flags = String.join(",", fl);
+            // plain text that already shows up inside a button's label is redundant
+            if (!click && !edit && !check && !scroll) {
+                AccessibilityNodeInfo p = n.getParent();
+                for (int up = 0; up < 3 && p != null; up++) { if (p.isClickable()) { x.covered = true; break; } p = p.getParent(); }
+            }
+            out.add(x);
         }
-        for (int i = 0; i < n.getChildCount(); i++) walk(n.getChild(i), s, sb, depth + 1);
+        for (int i = 0; i < n.getChildCount(); i++) walk(n.getChild(i), out, depth + 1, seen);
+    }
+
+    /** The element whose label best matches: exact, then starts-with, then contains (case-insensitive). */
+    private static Node findByLabel(Screen s, String want) {
+        String w = want.toLowerCase(Locale.ROOT);
+        Node starts = null, contains = null;
+        for (Node x : s.nodes) {
+            String l = x.label.toLowerCase(Locale.ROOT);
+            String core = l.contains(" (for: ") ? l.substring(0, l.indexOf(" (for: ")) : l;
+            if (l.equals(w) || core.equals(w)) return x;
+            if (starts == null && l.startsWith(w)) starts = x;
+            if (contains == null && l.contains(w)) contains = x;
+        }
+        return starts != null ? starts : contains;
     }
 
     private Node refind(Node old) {
@@ -532,29 +661,39 @@ public class AgentService extends AccessibilityService {
 
     private boolean type(Node x, String text) {
         AccessibilityNodeInfo target = null;
-        if (x != null) {
-            if (x.n.isEditable()) target = x.n;
-            else { tap(x); sleep(700); }
-        }
-        if (target == null) {
+        if (x != null && x.n.isEditable()) target = x.n;
+        else if (x != null) tap(x);
+        // search bars in food/grocery apps are often fake buttons that open a new screen with the real field
+        for (int i = 0; target == null && i < 12; i++) {
+            sleep(200);
             AccessibilityNodeInfo r = appRoot();
-            if (r != null) target = r.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
-            if (target == null && r != null) target = firstEditable(r, 0);
+            if (r == null) continue;
+            target = r.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+            if (target == null || !target.isEditable()) target = firstEditable(r, 0);
         }
         if (target == null) return false;
-        if (!target.isFocused()) { target.performAction(AccessibilityNodeInfo.ACTION_FOCUS); target.performAction(AccessibilityNodeInfo.ACTION_CLICK); sleep(300); }
+        if (!target.isFocused()) { target.performAction(AccessibilityNodeInfo.ACTION_FOCUS); target.performAction(AccessibilityNodeInfo.ACTION_CLICK); sleep(250); }
         Bundle args = new Bundle();
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
-        if (target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return true;
+        boolean ok = target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+        sleep(250);
+        target.refresh();
+        String now = clean(target.getText());
+        if (ok && now.contains(text.trim())) return true;
         // fall back to paste
         try {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-            final AccessibilityNodeInfo t2 = target;
             final CountDownLatch l = new CountDownLatch(1);
             ui.post(() -> { cm.setPrimaryClip(ClipData.newPlainText("atlas", text)); l.countDown(); });
             l.await(1, TimeUnit.SECONDS);
-            return t2.performAction(AccessibilityNodeInfo.ACTION_PASTE);
-        } catch (Exception e) { return false; }
+            Bundle sel = new Bundle();
+            sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0);
+            sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, now.length());
+            target.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, sel);
+            boolean p = target.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+            sleep(250); target.refresh();
+            return p || clean(target.getText()).contains(text.trim());
+        } catch (Exception e) { return ok; }
     }
 
     private AccessibilityNodeInfo firstEditable(AccessibilityNodeInfo n, int d) {
@@ -571,21 +710,30 @@ public class AgentService extends AccessibilityService {
     }
 
     private void scroll(Node x, String dir, Screen sc) {
-        boolean fwd = !"up".equals(dir) && !"left".equals(dir);
+        boolean vert = !"left".equals(dir) && !"right".equals(dir);
+        int want = "down".equals(dir) ? android.R.id.accessibilityActionScrollDown : "up".equals(dir) ? android.R.id.accessibilityActionScrollUp
+                : "right".equals(dir) ? android.R.id.accessibilityActionScrollRight : android.R.id.accessibilityActionScrollLeft;
         AccessibilityNodeInfo c = x == null ? null : x.n;
         for (int i = 0; i < 5 && c != null; i++) {
-            if (c.isScrollable() && c.performAction(fwd ? AccessibilityNodeInfo.ACTION_SCROLL_FORWARD : AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD)) return;
+            if (c.isScrollable()) {
+                for (AccessibilityNodeInfo.AccessibilityAction a : c.getActionList())
+                    if (a.getId() == want && c.performAction(want)) return;
+            }
             c = c.getParent();
         }
-        int w = sc.w, h = sc.h;
+        // swipe like a finger, inside the element if one was given (so a carousel scrolls, not the page)
+        Rect r = x != null && x.b.width() > 100 && x.b.height() > 100 ? x.b : new Rect(0, sc.h / 8, sc.w, sc.h * 7 / 8);
         Path p = new Path();
-        if ("left".equals(dir) || "right".equals(dir)) {
-            int y = x != null ? x.b.centerY() : h / 2;
-            p.moveTo(fwd ? w * 0.8f : w * 0.2f, y); p.lineTo(fwd ? w * 0.2f : w * 0.8f, y);
+        if (!vert) {
+            float y = r.centerY(), a = r.left + r.width() * 0.85f, b = r.left + r.width() * 0.15f;
+            boolean fwd = "right".equals(dir);
+            p.moveTo(fwd ? a : b, y); p.lineTo(fwd ? b : a, y);
         } else {
-            p.moveTo(w / 2f, fwd ? h * 0.72f : h * 0.3f); p.lineTo(w / 2f, fwd ? h * 0.3f : h * 0.72f);
+            float xx = r.centerX(), a = r.top + r.height() * 0.78f, b = r.top + r.height() * 0.25f;
+            boolean fwd = "down".equals(dir);
+            p.moveTo(xx, fwd ? a : b); p.lineTo(xx, fwd ? b : a);
         }
-        gesture(new GestureDescription.StrokeDescription(p, 0, 380));
+        gesture(new GestureDescription.StrokeDescription(p, 0, 420));
     }
 
     private void vibrate(int ms) {
@@ -759,7 +907,7 @@ public class AgentService extends AccessibilityService {
             + "Every turn you get the visible UI elements as lines like `[id] Class \"label\" {flags} @x,y`, usually with a screenshot. "
             + "Reply with ONE JSON object: {\"thought\": \"<=20 words on what you see and why\", \"action\": \"tap|long_press|type|scroll|back|wait|look|open_app|ask_user|confirm|done|fail\", "
             + "\"id\": <element id for tap/type/scroll/confirm>, \"text\": \"for type\", \"enter\": true|false, \"direction\": \"up|down|left|right\", \"app\": \"for open_app\", "
-            + "\"question\": \"for ask_user\", \"summary\": \"for confirm/done/fail\"}.\n"
+            + "\"question\": \"for ask_user\", \"summary\": \"for confirm/done/fail\", \"then\": [optional, up to 3 follow-up actions to do right after this one without asking you again: {\"action\": \"tap|type\", \"label\": \"the label the element will have\", \"text\": \"for type\"}], \"notes\": \"optional: your running progress notes, e.g. 'added: milk 1L, eggs 6 | left: bread, onions 1kg' — they are shown back to you every step\"}.\n"
             + "HARD RULES:\n"
             + "1. Never complete a booking, order, payment or message yourself. When the next tap would do that (Place order, Confirm ride/pickup, Book, Request, Pay, Proceed to pay, Swipe/Slide to pay, Send, Checkout, Buy now), use action \"confirm\" with that button's id and a summary the user can check: "
             + "what is being booked/ordered (items × qty), price/total, pickup → drop or delivery address, ETA, payment method, recipient. The user taps Confirm; then continue and finish with done.\n"
@@ -767,6 +915,11 @@ public class AgentService extends AccessibilityService {
             + "3. If something essential is missing or ambiguous (drop location, which restaurant/dish, size, quantity, which saved address, which ride type when prices differ a lot), use ask_user with a short, specific question offering the options you see.\n"
             + "GUIDANCE: Use the saved/default address and default payment. Close popups, ads, rating prompts and tutorials (Close/X/Not now/Skip/Later). To fill a search field, use type on the field (it focuses it first), then tap the best suggestion — don't use enter unless there are no suggestions. "
             + "For rides: set pickup (current location is fine) and drop, then show the ride options; pick the cheapest sensible option (e.g. Uber Go / Ola Mini / Auto) unless the GOAL names one, then confirm before booking. "
+            + "Labels like \"ADD (for: Chicken Biryani · ₹249)\" tell you which item a repeated button belongs to — always pick the ADD/+ whose 'for:' matches the item you want. "
+            + "In food and grocery apps the search bar on the home screen is usually a button: use type on it (Atlas taps it and types into the real field that opens). After typing, results/suggestions load — pick the matching one; use enter only if nothing appears. "
+            + "If an item has a customisation sheet (size, add-ons, 'Repeat last'), choose the default/smallest sensible option and tap its Add/Confirm button inside the sheet (that is not a payment). "
+            + "After adding items, the cart is reached via a bottom bar like 'View Cart', 'Next', or 'items added'. Before the final step check the cart matches the request (items and quantities; use + / − to fix). "
+            + "If an item is out of stock or unavailable, pick the closest equivalent only if it is obviously the same thing (same product, different pack is fine); otherwise ask_user. Keep notes of what is done and what is left on multi-item orders. "
             + "For food: search the restaurant or dish, prefer well-rated, open, nearby places; add items, customise with defaults, open the cart, review, then confirm before placing the order. "
             + "For groceries (Instamart/Blinkit/Zepto): add every item on the list one by one (search each, pick a popular pack of a normal size), then open the cart, check all items are there, then confirm before paying. "
             + "For shopping (Amazon, Flipkart, Myntra, Meesho, Ajio, Nykaa, JioMart, BigBasket, Croma…): search the product, open a well-rated listing that matches the request (brand, size, colour, budget), pick the variant, Add to cart (or Buy now), go to the cart/checkout, keep the default address and payment, then confirm before the final Place order / Pay button. Never apply for EMI, credit or Pay Later, and skip add-ons like protection plans unless asked. "
@@ -776,6 +929,7 @@ public class AgentService extends AccessibilityService {
             + "For phone settings (Quick Settings is already pulled down when the app is quick settings): tap the tile by its label (Wi-Fi, Bluetooth, Do not disturb, Airplane mode, Auto-rotate, Hotspot, Mobile data, Location, Battery saver); swipe down/scroll to expand if not visible; check the tile state changed, then done. Turning on Airplane mode, or turning off Mobile data/Wi-Fi, needs confirm first. "
             + "For messages in WhatsApp/Telegram: the chat may already be open with the text typed; check the contact name, then confirm on Send. "
             + "For email in Gmail: the compose screen may already be filled; check To/Subject/Body and use confirm on Send. "
+            + "SPEED: use then whenever the next steps are predictable, e.g. type 'biryani' then tap the suggestion labelled 'Biryani'; tap a tab then tap a known button. Atlas finds each follow-up by its label on the fresh screen and stops if it isn't there; it never runs a final payment/send step as a follow-up. "
             + "Use look when you need to see the screen (no screenshot this turn and the elements are unclear). Prefer the fewest steps; don't wait unless something is loading. "
             + "If an action had no effect, try a different element, scroll, or wait. Use done with a one-line summary when the goal is achieved (e.g. ride booked, order placed, or everything is ready), or fail with the reason if it truly can't be done. Element ids change every turn — only use ids from the current list.";
 }

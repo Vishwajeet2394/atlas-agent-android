@@ -1,0 +1,24 @@
+plugins { id "com.android.application" }
+android {
+    namespace "com.atlas.sim"
+    compileSdk 34
+    defaultConfig { minSdk 30; targetSdk 34; versionCode 1; versionName "sim" }
+    flavorDimensions "app"
+    productFlavors {
+        swiggy    { dimension "app"; applicationId "in.swiggy.android";                 resValue "string", "app_name", "Swiggy";    buildConfigField "String", "APP", '"swiggy"' }
+        instamart { dimension "app"; applicationId "in.swiggy.android.instamart";       resValue "string", "app_name", "Instamart"; buildConfigField "String", "APP", '"instamart"' }
+        zomato    { dimension "app"; applicationId "com.application.zomato";            resValue "string", "app_name", "Zomato";    buildConfigField "String", "APP", '"zomato"' }
+        blinkit   { dimension "app"; applicationId "com.grofers.customer";              resValue "string", "app_name", "Blinkit";   buildConfigField "String", "APP", '"blinkit"' }
+        zepto     { dimension "app"; applicationId "com.zeptoconsumerapp";              resValue "string", "app_name", "Zepto";     buildConfigField "String", "APP", '"zepto"' }
+        uber      { dimension "app"; applicationId "com.ubercab";                       resValue "string", "app_name", "Uber";      buildConfigField "String", "APP", '"uber"' }
+        ola       { dimension "app"; applicationId "com.olacabs.customer";              resValue "string", "app_name", "Ola";       buildConfigField "String", "APP", '"ola"' }
+        rapido    { dimension "app"; applicationId "com.rapido.passenger";              resValue "string", "app_name", "Rapido";    buildConfigField "String", "APP", '"rapido"' }
+        amazon    { dimension "app"; applicationId "in.amazon.mShop.android.shopping";  resValue "string", "app_name", "Amazon";    buildConfigField "String", "APP", '"amazon"' }
+        flipkart  { dimension "app"; applicationId "com.flipkart.android";              resValue "string", "app_name", "Flipkart";  buildConfigField "String", "APP", '"flipkart"' }
+        gmail     { dimension "app"; applicationId "com.google.android.gm";             resValue "string", "app_name", "Gmail";     buildConfigField "String", "APP", '"gmail"' }
+        whatsapp  { dimension "app"; applicationId "com.whatsapp";                      resValue "string", "app_name", "WhatsApp";  buildConfigField "String", "APP", '"whatsapp"' }
+        phonepe   { dimension "app"; applicationId "com.phonepe.app";                   resValue "string", "app_name", "PhonePe";   buildConfigField "String", "APP", '"phonepe"' }
+    }
+    buildFeatures { buildConfig true }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
