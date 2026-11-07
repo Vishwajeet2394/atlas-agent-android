@@ -334,7 +334,7 @@ public class SimActivity extends Activity {
                     for (String[] r : RESTAURANTS) if (r[0].toLowerCase(Locale.ROOT).contains(q)) sugg.addView(card(() -> go(() -> menu(r)), r[0], "Restaurant"), wrapW());
                     java.util.Set<String> dishes = new java.util.LinkedHashSet<>();
                     for (String[] r : RESTAURANTS) for (int i = 2; i < r.length; i++) { String d = r[i].split("\\|")[0]; if (d.toLowerCase(Locale.ROOT).contains(q)) dishes.add(d); }
-                    for (String d : dishes) sugg.addView(card(() -> { lastQuery = d; go(this::foodResults); }, d, "Dish"), wrapW());
+                    for (String d : dishes) sugg.addView(card(() -> { lastQuery = d; go(SimActivity.this::foodResults); }, d, "Dish"), wrapW());
                     log("SUGGESTIONS", jo("q", q, "n", sugg.getChildCount()));
                 }, 600);
             }
@@ -536,7 +536,7 @@ public class SimActivity extends Activity {
             public void afterTextChanged(Editable s) {
                 ui.postDelayed(() -> {
                     sugg.removeAllViews(); String q = s.toString().toLowerCase(Locale.ROOT).trim(); if (q.length() < 2) return;
-                    for (String p : PLACES) { boolean m = false; for (String w : q.split("[\\s,]+")) if (w.length() > 2 && p.toLowerCase(Locale.ROOT).contains(w)) m = true; if (m) sugg.addView(card(() -> { dropTo = p; go(this::rideOptions); }, p, "Nashik, Maharashtra"), wrapW()); }
+                    for (String p : PLACES) { boolean m = false; for (String w : q.split("[\\s,]+")) if (w.length() > 2 && p.toLowerCase(Locale.ROOT).contains(w)) m = true; if (m) sugg.addView(card(() -> { dropTo = p; go(SimActivity.this::rideOptions); }, p, "Nashik, Maharashtra"), wrapW()); }
                 }, 500);
             }
         });

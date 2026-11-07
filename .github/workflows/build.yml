@@ -25,7 +25,7 @@ jobs:
         run: |
           set -o pipefail
           SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"; echo "sdk.dir=$SDK" > local.properties
-          gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+          gradle :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
           cp app/build/outputs/apk/release/app-release.apk Atlas.apk
       - name: Report build errors
         if: failure()
