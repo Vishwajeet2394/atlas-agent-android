@@ -93,6 +93,8 @@ public class AgentService extends AccessibilityService {
         return performGlobalAction(action);
     }
     static boolean isBusy() { return busy; }
+    /** Called when Atlas comes to the front: the "Done" card is no longer needed. */
+    static void hideIfIdle() { AgentService s = I; if (s != null && !busy) s.hideOverlay(); }
     static void requestStop() { stop = true; AgentService s = I; if (s != null) s.answer("stop"); }
     static String log() { synchronized (LOG) { return LOG.toString(); } }
 

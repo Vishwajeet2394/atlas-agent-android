@@ -195,7 +195,7 @@ public class MainActivity extends Activity {
 
     private boolean hasFiles() { return Environment.isExternalStorageManager(); }
 
-    @Override protected void onResume() { super.onResume(); if (pageReady) runJs("window.atlasResume&&atlasResume()"); }
+    @Override protected void onResume() { super.onResume(); AgentService.hideIfIdle(); if (pageReady) runJs("window.atlasResume&&atlasResume()"); }
 
     @Override protected void onDestroy() { if (instance == this) instance = null; super.onDestroy(); }
 
