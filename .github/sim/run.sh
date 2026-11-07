@@ -37,7 +37,7 @@ run() {
   adb shell input keyevent KEYCODE_HOME; sleep 1
   adb logcat -c
   local t0=$(date +%s)
-  adb shell am start -n $A/.MainActivity --es sim_key "$GEMINI_API_KEY" --es sim_confirm "$confirm" --es sim_answers "'$answers'" --es sim_chat "'$chat'" >/dev/null
+  adb shell am start -n $A/.MainActivity --es sim_key "$GEMINI_API_KEY" --es sim_confirm "$confirm" --es sim_answers_b64 "$(printf '%s' "$answers" | base64 -w0)" --es sim_chat_b64 "$(printf '%s' "$chat" | base64 -w0)" >/dev/null
   local ended=0
   for i in $(seq 1 $((timeout/3))); do
     sleep 3

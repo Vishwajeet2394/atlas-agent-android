@@ -134,6 +134,11 @@ public class MainActivity extends Activity {
 
     private void handleIntent(Intent i) {
         if (i == null) return;
+        if (BuildConfig.SIM && i.hasExtra("sim_chat_b64")) {
+            i.putExtra("sim_chat", new String(Base64.decode(i.getStringExtra("sim_chat_b64"), Base64.DEFAULT), StandardCharsets.UTF_8));
+            i.putExtra("sim_answers", new String(Base64.decode(i.getStringExtra("sim_answers_b64") == null ? "" : i.getStringExtra("sim_answers_b64"), Base64.DEFAULT), StandardCharsets.UTF_8));
+            i.removeExtra("sim_chat_b64");
+        }
         if (BuildConfig.SIM && i.hasExtra("sim_chat")) {
             android.content.SharedPreferences.Editor e = Ai.prefs(this).edit();
             if (i.hasExtra("sim_key")) e.putString("gemini_key", i.getStringExtra("sim_key")).putString("provider", "gemini");
