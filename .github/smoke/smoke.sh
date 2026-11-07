@@ -12,6 +12,9 @@ adb push .github/smoke/IMG_20261101_sunset_copy.jpg /sdcard/Download/
 adb shell appops set --uid $P MANAGE_EXTERNAL_STORAGE allow
 adb shell settings put secure enabled_accessibility_services $P/$P.AgentService
 adb shell settings put secure accessibility_enabled 1
+adb shell settings put global hide_error_dialogs 1
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null
+adb shell input keyevent KEYCODE_HOME; sleep 3
 adb logcat -c
 adb shell am start -W -n $P/.MainActivity; sleep 12; shot 1-assistant
 for t in files tasks settings; do adb shell am start -n $P/.MainActivity --es go $t; sleep 5; shot "2-$t"; done
@@ -22,6 +25,8 @@ sleep 9; shot 3-agent-running
 for i in $(seq 1 30); do adb logcat -d -s AtlasAgent:I | grep -q "Self-test passed\|fail:" && break; sleep 2; done
 if ! adb logcat -d -s AtlasAgent:I | grep -q "Self-test passed"; then
   echo "self-test attempt 1 did not finish — retrying once"; adb shell am force-stop $P; sleep 2
+  adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null
+  adb shell settings put secure enabled_accessibility_services $P/$P.AgentService; sleep 4
   adb shell am start -n $P/.MainActivity --es selftest "TAP:Network" --es app settings
   for i in $(seq 1 30); do adb logcat -d -s AtlasAgent:I | grep -q "Self-test passed" && break; sleep 2; done
 fi

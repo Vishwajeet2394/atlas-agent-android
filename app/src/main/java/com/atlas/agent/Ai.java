@@ -239,12 +239,17 @@ final class Ai {
         if (!u.contains("ELEMENTS:")) return "{\"say\":\"selftest ok\",\"actions\":[]}";
         String goal = u.substring(u.indexOf("GOAL:") + 5, u.indexOf('\n')).trim();
         String want = goal.contains("TAP:") ? goal.substring(goal.indexOf("TAP:") + 4).trim().toLowerCase(Locale.ROOT) : "";
-        if (u.contains("RECENT ACTIONS:") && u.contains("tapped")) return "{\"thought\":\"tapped the target\",\"action\":\"done\",\"summary\":\"Self-test passed: opened " + want + "\"}";
+        if (u.contains("RECENT ACTIONS:") && u.toLowerCase(Locale.ROOT).matches("(?s).*tapped[^\\n]*" + java.util.regex.Pattern.quote(want) + ".*")) return "{\"thought\":\"tapped the target\",\"action\":\"done\",\"summary\":\"Self-test passed: opened " + want + "\"}";
         String[] lines = u.substring(u.indexOf("ELEMENTS:")).split("\n");
         for (String l : lines) {
             if (l.startsWith("[") && l.toLowerCase(Locale.ROOT).contains(want)) {
                 String id = l.substring(1, l.indexOf(']'));
                 return "{\"thought\":\"found " + want + "\",\"action\":\"tap\",\"id\":" + id + "}";
+            }
+        }
+        for (String l : lines) { // a system "isn't responding" dialog is in the way
+            if (l.startsWith("[") && (l.contains("\"Wait\"") || l.contains("\"Close app\""))) {
+                return "{\"thought\":\"dismissing a system dialog\",\"action\":\"tap\",\"id\":" + l.substring(1, l.indexOf(']')) + "}";
             }
         }
         return "{\"thought\":\"not visible, scrolling\",\"action\":\"scroll\",\"direction\":\"down\"}";
