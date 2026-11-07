@@ -65,6 +65,21 @@ const IC = {
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   car: '<path d="M5 17h14M5 17a2 2 0 1 1-4 0v-4l2.5-6A2 2 0 0 1 5.4 6h13.2a2 2 0 0 1 1.9 1l2.5 6v4a2 2 0 1 1-4 0"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M3 12h18"/>',
   food: '<path d="M3 2v7a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V2M6 2v20M21 15V2a5 5 0 0 0-5 5v6a2 2 0 0 0 2 2h3zm0 0v7"/>',
+  clock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M5 3 2 6M19 3l3 3"/>',
+  cal: '<rect x="3" y="4" width="18" height="18" rx="3"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  nav: '<path d="m3 11 19-9-9 19-2-8z"/>',
+  torch: '<path d="M8 2h8v5l-2 3v11a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1V10L8 7z"/><path d="M12 13v2"/>',
+  vol: '<path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/>',
+  battery: '<rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2M6 10v4M10 10v4"/>',
+  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
+  repeat: '<path d="m17 2 4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>',
+  wifi: '<path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M2 9a15 15 0 0 1 20 0"/><circle cx="12" cy="19.5" r="1"/>',
+  bt: '<path d="m7 7 10 10-5 5V2l5 5L7 17"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  plane: '<path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>',
+  rupee: '<path d="M6 3h12M6 8h12M15 21 6 13h3a5 5 0 0 0 0-10"/>',
   bag: '<path d="M6 7h12l1 14H5z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/>',
   cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 12.4a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.5L21 8H6"/>',
   mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
@@ -216,6 +231,7 @@ const SUGGEST = [
   ["mail", "#a35bd6", "Draft an email", "Write and send with Gmail", "Draft an email to "],
   ["search", "#e09b2d", "Find a file", "Search names and contents", "Find my PAN card photo"],
   ["wand", "#2b9bb0", "Tidy Downloads", "Sort into folders", "Organise my Download folder by type"],
+  ["bell", "#6a7fdb", "What did I miss?", "Summarise notifications", "What did I miss in my notifications today?"],
 ];
 function viewAssistant() {
   const greet = (() => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; })();
@@ -225,7 +241,7 @@ function viewAssistant() {
     h += `<div class="hero"><div class="spark">${ic("spark")}</div><div class="big">${greet}${name ? ", " + esc(name) : ""}.</div><div class="t2">Ask about any photo or PDF, find and tidy files, or give me errands — I'll open the apps and do the tapping. You approve before anything is booked, paid or sent.</div></div>`;
     h += setupBanners();
     h += `<div class="suggest">${SUGGEST.map((s, i) => `<button class="sg" data-a="suggest" data-i="${i}" style="--c:${s[1]}"><span class="ic">${ic(s[0])}</span><b>${s[2]}</b><span>${s[3]}</span></button>`).join("")}</div>`;
-    h += `<div class="hint" style="padding:0 6px">Tip: chain errands in one message — “book an Ola to the station and order dinner from Zomato for 8 pm”.</div>`;
+    h += `<div class="hint" style="padding:0 6px">Try: “book an Ola to the station and order dinner from Zomato” · “remind me to pay rent on the 1st every month” · “every weekday at 9 pm set an alarm for 6:30 and switch on Do Not Disturb” · “WhatsApp Rahul I'm running late”.</div>`;
   } else {
     h += setupBanners();
     h += `<div class="msgs">${S.chat.map(m => msgHtml(m, true)).join("")}</div>`;
@@ -294,6 +310,15 @@ function cardHtml(m, c, i) {
           : groups.length ? `<div class="row end" style="margin-top:12px"><button class="btn primary sm" data-a="applyOrg" ${ref}>${ic("check", "s")} Move files</button></div>` : ""}</div>`;
   }
   if (c.kind === "setup") return `<div class="rc">${c.html}</div>`;
+  if (c.kind === "done") return `<div class="rc"><div class="hd" style="margin:0"><span class="ic" style="${c.ok ? "" : "background:var(--error-c);color:var(--on-error-c)"}">${ic(c.ok ? (c.icon || "check") : "x", "s")}</span><b style="font-weight:550">${esc(c.text)}</b></div></div>`;
+  if (c.kind === "contact") {
+    const verb = c.mode === "call" ? "Call" : c.mode === "sms" ? "Send SMS" : "Send on WhatsApp";
+    const done = c.state === "done";
+    return `<div class="rc"><div class="hd"><span class="ic">${ic(c.mode === "call" ? "phone" : "chat", "s")}</span><b>${c.mode === "call" ? "Call" : c.mode === "sms" ? "SMS" : "WhatsApp"} ${esc(c.who)}</b>${done ? `<span class="badge ok">${ic("check", "s")}</span>` : ""}</div>
+      ${c.choices.length ? c.choices.map((x, j) => `<div class="li ${j === c.pick ? "on" : ""}" data-a="pickContact" ${ref} data-j="${j}" style="padding:8px 6px"><span class="ico" style="${j === c.pick ? "background:var(--primary);color:var(--on-primary)" : ""}">${ic(j === c.pick ? "check" : "user")}</span><div class="grow"><div class="tt">${esc(x.name)}${x.starred ? " ★" : ""}</div><div class="t2">${esc(x.number)}${x.type ? " · " + x.type : ""}</div></div></div>`).join("") : `<div class="t2">No contact called “${esc(c.who)}”. Type a number:</div><input data-f="num" ${ref} inputmode="tel" placeholder="98xxxxxxxx" style="margin-top:8px">`}
+      ${c.mode !== "call" ? `<label class="f">Message</label><textarea data-f="text" ${ref} rows="3">${esc(c.text)}</textarea>` : ""}
+      ${done ? "" : `<div class="row end" style="margin-top:12px"><button class="btn primary sm" data-a="contactGo" ${ref}>${ic(c.mode === "call" ? "phone" : "send", "s")} ${verb}</button></div>`}</div>`;
+  }
   return "";
 }
 function statusBadge(s) {
@@ -302,7 +327,7 @@ function statusBadge(s) {
   if (s === "running") return `<span class="badge pri">…</span>`;
   return "";
 }
-function appName(a) { a = String(a || "").toLowerCase(); const m = { uber: "Uber", ola: "Ola", rapido: "Rapido", swiggy: "Swiggy", instamart: "Instamart", zomato: "Zomato", blinkit: "Blinkit", zepto: "Zepto", gmail: "Gmail", whatsapp: "WhatsApp", amazon: "Amazon", flipkart: "Flipkart", myntra: "Myntra", meesho: "Meesho", ajio: "AJIO", nykaa: "Nykaa", jiomart: "JioMart", bigbasket: "BigBasket", bookmyshow: "BookMyShow", irctc: "IRCTC", redbus: "redBus", makemytrip: "MakeMyTrip" }; return m[a] || (a ? a[0].toUpperCase() + a.slice(1) : "Phone"); }
+function appName(a) { a = String(a || "").toLowerCase(); const m = { phonepe: "PhonePe", paytm: "Paytm", gpay: "Google Pay", "quick settings": "Quick Settings", uber: "Uber", ola: "Ola", rapido: "Rapido", swiggy: "Swiggy", instamart: "Instamart", zomato: "Zomato", blinkit: "Blinkit", zepto: "Zepto", gmail: "Gmail", whatsapp: "WhatsApp", amazon: "Amazon", flipkart: "Flipkart", myntra: "Myntra", meesho: "Meesho", ajio: "AJIO", nykaa: "Nykaa", jiomart: "JioMart", bigbasket: "BigBasket", bookmyshow: "BookMyShow", irctc: "IRCTC", redbus: "redBus", makemytrip: "MakeMyTrip" }; return m[a] || (a ? a[0].toUpperCase() + a.slice(1) : "Phone"); }
 
 // ---------- sending ----------
 function addMsg(m) { m.id = m.id || uid(); S.chat.push(m); saveChat(); if (S.tab === "assistant") { if (!$(".msgs")) render(); else updateMsg(m); } return m; }
@@ -364,7 +389,15 @@ Action types:
 - {"type":"email","to":"","cc":"","subject":"","body":"the complete email text, signed off with the user's name if known","attach_query":"optional keywords of files to attach","attach_kind":"pdf|image|any"}
 - {"type":"phone_task","app":"uber|ola|rapido|swiggy|instamart|zomato|blinkit|zepto|amazon|flipkart|myntra|meesho|ajio|nykaa|jiomart|bigbasket|bookmyshow|irctc|redbus|makemytrip|gmail|whatsapp|<any app name from the list>","goal":"a complete, self-contained instruction for the agent with every detail the user gave: pickup/drop, ride type, dish/restaurant, every item with quantity/size/colour/brand/budget, delivery time, notes"}
 - {"type":"open_app","app":"name"}
-Rules: Use several actions for several requests; errands run one after another in the given order. Don't invent addresses or recipients — if a cab request has no destination or an email has no recipient you can infer, ask in "say" and return no action for it (you may still draft the email with "to" empty). "home"/"office" are fine if the user says them (the app's saved places). Pick the app the user named; otherwise the best installed one (cabs: uber → ola → rapido; food: swiggy → zomato; groceries: instamart → blinkit → zepto; shopping: amazon → flipkart; fashion: myntra → ajio → meesho). For shopping, if the product is vague (no model, size or budget) ask one short question first unless the user said "any"/"cheapest"/"best rated". If files are attached to this message, answer about them directly in "say" with the details the user wants (amounts, dates, names, what the image shows) and return no actions unless asked. Keep "say" brief when actions do the work (e.g. "On it — opening Uber."). If it's just conversation, actions = [].`;
+- {"type":"device","op":"alarm","hour":0-23,"minute":0-59,"label":"","days":[0-6 Sun..Sat, optional]} · {"op":"timer","seconds":N,"label":""} · {"op":"event","title":"","start":"YYYY-MM-DDTHH:MM","end":"","location":"","notes":""} · {"op":"navigate","to":"place","mode":"d|w|b|l|transit"} · {"op":"map","query":""} · {"op":"play","query":"song/artist/video","app":"spotify|youtube|youtube music|<app>"} · {"op":"flashlight","on":true|false} · {"op":"volume","stream":"media|ring|alarm|call|notification","percent":0-100} · {"op":"ringer","mode":"normal|vibrate|silent"} · {"op":"settings","panel":"wifi|bluetooth|internet|volume|battery|display|location|dnd|hotspot|storage|apps|sound"} · {"op":"battery"} · {"op":"web","query":"","url":""} · {"op":"screenshot"} · {"op":"lock"}
+- {"type":"call","contact":"contact name or number"}
+- {"type":"message","via":"whatsapp|sms","contact":"contact name or number","text":"the full message"}
+- {"type":"reminder","text":"what to remind","time":"HH:MM 24h","date":"YYYY-MM-DD (for once)","repeat":"once|daily|weekdays|weekends|weekly|monthly","days":[0-6],"day":1-31}
+- {"type":"routine","name":"short name","prompt":"what Atlas should do each time, as a full request (may include several errands)","time":"HH:MM","repeat":"daily|weekdays|weekends|weekly|monthly|once","days":[],"day":1-31,"date":"","auto":true|false}
+- {"type":"notifications","hours":24,"question":"what the user wants to know, e.g. summary, anything from the bank, OTPs not needed"}
+- Toggles that apps can't flip directly (Wi-Fi, Bluetooth, Do Not Disturb, Airplane mode, mobile data, hotspot, auto-rotate, battery saver, brightness): use {"type":"phone_task","app":"quick settings","goal":"turn Wi-Fi off"}.
+- Recharges and bill payments: phone_task in phonepe → paytm → gpay with operator/biller, number/consumer ID and plan/amount in the goal.
+Rules: Use several actions for several requests; errands run one after another in the given order. Don't invent addresses or recipients — if a cab request has no destination or an email has no recipient you can infer, ask in "say" and return no action for it (you may still draft the email with "to" empty). "home"/"office" are fine if the user says them (the app's saved places). Pick the app the user named; otherwise the best installed one (cabs: uber → ola → rapido; food: swiggy → zomato; groceries: instamart → blinkit → zepto; shopping: amazon → flipkart; fashion: myntra → ajio → meesho). For shopping, if the product is vague (no model, size or budget) ask one short question first unless the user said "any"/"cheapest"/"best rated". If files are attached to this message, answer about them directly in "say" with the details the user wants (amounts, dates, names, what the image shows) and return no actions unless asked. Keep "say" brief when actions do the work (e.g. "On it — opening Uber."). Reminders vs routines: a reminder only notifies; a routine makes Atlas run a request at that time (e.g. "every 1st of the month at 10:00 recharge my Jio number 98xxxxxx with the ₹349 plan"). Relative times ("in 20 minutes", "tomorrow morning" = 09:00) must be turned into date+time using today's date. For calls and messages, put the person's name exactly as the user said it in "contact". If it's just conversation, actions = [].`;
   const parts = [{ text }];
   for (const f of files) parts.push({ file: f, as: "auto", pages: 6 });
   const msgs = [...history(), { role: "user", parts }];
@@ -413,10 +446,55 @@ async function runAction(a, reply, userText) {
     let attach = [];
     if (a.attach_query && N.hasFiles()) { const r = await findFiles(a.attach_query, a.attach_kind || "any", "score", 3); attach = r.items.slice(0, 1).map(f => f.p); }
     push({ kind: "email", to: a.to || "", cc: a.cc || "", subject: a.subject || "", body: a.body || "", attach });
+  } else if (a.type === "device") {
+    if (["screenshot", "lock"].includes(a.op) && !N.agentOn()) { push(setupCard("agent")); return; }
+    const r = J(N.device(JSON.stringify(a)), { ok: false, text: "Failed" });
+    push({ kind: "done", ok: r.ok, text: r.text, icon: DEV_IC[a.op] || "bolt" });
+  } else if (a.type === "call" || a.type === "message") {
+    const c = await contactCard(a); if (c) push(c);
+  } else if (a.type === "reminder" || a.type === "routine") {
+    try { await call("askPerm", "notify"); } catch (e) { }
+    const r = { kind: a.type === "reminder" ? "remind" : "run", name: a.name || (a.type === "reminder" ? a.text : "Routine"), text: a.text || "", prompt: a.prompt || "", time: a.time || "09:00", repeat: a.repeat || "once", days: a.days || [], day: a.day || 1, date: a.date || "", auto: !!a.auto, on: true };
+    const saved = J(N.saveRoutine(JSON.stringify(r)), {}); const all = J(N.routines(), []); const me = all.find(x => x.id === saved.id) || saved;
+    push({ kind: "done", ok: !!saved.id, icon: a.type === "reminder" ? "bell" : "repeat", text: (a.type === "reminder" ? "Reminder: " : "Routine: ") + (r.name) + " — " + routineWhen(me) + (me.next ? " · next " + new Date(me.next).toLocaleString("en-IN", { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "") });
+  } else if (a.type === "notifications") {
+    if (!N.notifAccess()) { push({ kind: "setup", html: `<div class="hd"><span class="ic">${ic("bell", "s")}</span><b>Allow notification access</b></div><div class="t2">So Atlas can read and summarise your notifications. They stay in memory on the phone and are sent to the AI only when you ask.</div><div class="row end" style="margin-top:10px"><button class="btn primary sm" data-a="notifAccess">Allow</button></div>` }); return; }
+    const list = J(N.notifications(a.hours || 24), []);
+    if (!list.length) { reply.text = (reply.text ? reply.text + "\n\n" : "") + "No new notifications since you allowed access (Atlas only sees ones that arrive after that)."; updateMsg(reply); return; }
+    reply.typing = true; updateMsg(reply);
+    const txt = list.slice(-250).map(n => `${new Date(n.t).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" })} · ${n.app} · ${n.title}: ${n.text}`.slice(0, 300)).join("\n");
+    const ans = await ai({ system: "You summarise the user's phone notifications. Group by what matters: messages from people, money/bank/UPI, deliveries & bookings, work, then the rest briefly. Never repeat OTPs or full account numbers. Use short bullet points.", maxTokens: 1500, messages: [{ role: "user", parts: [{ text: (a.question || "Summarise what I missed.") + "\n\nNotifications:\n" + txt }] }] });
+    reply.typing = false; reply.text = (reply.text ? reply.text + "\n\n" : "") + ans; updateMsg(reply);
   } else if (a.type === "open_app") {
     if (!N.launch(a.app || "")) toast((a.app || "That app") + " isn't installed");
   }
 }
+const DEV_IC = { alarm: "clock", timer: "clock", show_alarms: "clock", event: "cal", navigate: "nav", map: "nav", play: "audio", flashlight: "torch", volume: "vol", ringer: "vol", settings: "gear", battery: "battery", web: "search", screenshot: "shot", lock: "shield", open_app: "open" };
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+function to12(t) { const [h, m] = String(t || "09:00").split(":").map(Number); return ((h + 11) % 12 + 1) + ":" + String(m || 0).padStart(2, "0") + (h < 12 ? " AM" : " PM"); }
+function routineWhen(r) {
+  const t = to12(r.time), rp = r.repeat || "once";
+  if (rp === "daily") return "every day at " + t;
+  if (rp === "weekdays") return "weekdays at " + t;
+  if (rp === "weekends") return "weekends at " + t;
+  if (rp === "weekly") return "every " + ((r.days || []).length ? r.days.map(d => DAYS[d]).join(", ") : "Mon") + " at " + t;
+  if (rp === "monthly") return "every month on the " + ordinal(r.day || 1) + " at " + t;
+  return (r.date ? new Date(r.date + "T00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }) + " at " : "at ") + t;
+}
+function ordinal(n) { const s = ["th", "st", "nd", "rd"], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
+async function contactCard(a) {
+  const who = String(a.contact || "").trim(), mode = a.type === "call" ? "call" : (a.via === "sms" ? "sms" : "whatsapp");
+  let choices = [];
+  if (/^[+\d][\d\s-]{6,}$/.test(who)) choices = [{ name: who, number: who.replace(/[\s-]/g, "") }];
+  else if (who) {
+    try { await call("askPerm", "contacts"); } catch (e) { }
+    const r = J(N.contacts(who), { items: [] });
+    if (r.perm === false) return { kind: "setup", html: `<div class="hd"><span class="ic">${ic("user", "s")}</span><b>Allow contacts</b></div><div class="t2">So Atlas can find ${esc(who)}'s number.</div><div class="row end" style="margin-top:10px"><button class="btn primary sm" data-a="permContacts">Allow</button></div>` };
+    choices = r.items || [];
+  }
+  return { kind: "contact", mode, who, text: a.text || "", choices, pick: 0, state: "" };
+}
+
 function setupCard(what) {
   if (what === "files") return { kind: "setup", html: `<div class="hd"><span class="ic">${ic("folder", "s")}</span><b>Allow file access</b></div><div class="t2">Atlas needs “All files access” to search your phone.</div><div class="row end" style="margin-top:10px"><button class="btn primary sm" data-a="askFiles">Allow</button></div>` };
   return { kind: "setup", html: `<div class="hd"><span class="ic">${ic("hand", "s")}</span><b>Switch on the phone agent</b></div><div class="t2">Settings → Accessibility → Installed apps → Atlas agent → On. If it's greyed out: App info → ⋮ → Allow restricted settings first.</div><div class="row end" style="margin-top:10px"><button class="btn ghost sm" data-a="openAppInfo">App info</button><button class="btn primary sm" data-a="openA11y">Open settings</button></div>` };
@@ -674,16 +752,61 @@ const TEMPL = {
   food: { t: "Order food", ic: "food", c: "#e5534b", apps: ["swiggy", "zomato"], fields: [["what", "What to order", "e.g. 2 paneer butter masala, 4 butter naan"], ["where", "From (optional)", "Restaurant name"], ["note", "Notes (optional)", "less spicy, deliver at 8 pm"]], goal: v => `Order ${v.what}${v.where ? " from " + v.where : " from a well-rated restaurant nearby"} to my default address.${v.note ? " Notes: " + v.note + "." : ""}` },
   grocery: { t: "Groceries", ic: "cart", c: "#3b9c7a", apps: ["instamart", "blinkit", "zepto"], fields: [["list", "Shopping list (one per line)", "1 L Amul milk\n6 eggs\n1 kg onions", true]], goal: v => `Add these groceries to the cart and check out to my default address:\n${v.list}` },
   shop: { t: "Shop online", ic: "bag", c: "#e07b39", apps: ["amazon", "flipkart", "myntra", "meesho", "ajio", "nykaa", "jiomart"], fields: [["item", "What to buy", "e.g. boAt Airdopes 141, black"], ["qty", "Quantity / size (optional)", "1, size M…"], ["budget", "Budget (optional)", "under ₹1,500"]], goal: v => `Buy ${v.qty ? v.qty + " × " : ""}${v.item}${v.budget ? ", budget " + v.budget : ""}. Pick a well-rated listing that matches, add it to the cart and check out to my default address with my default payment.` },
+  bill: { t: "Recharge & bills", ic: "rupee", c: "#2e9e6a", apps: ["phonepe", "paytm", "gpay", "amazon"], fields: [["what", "What to pay", "Jio prepaid recharge / MSEDCL electricity bill / FASTag / DTH"], ["id", "Number or consumer ID (optional if saved)", "98xxxxxxxx"], ["plan", "Plan or amount (optional)", "₹349 plan / full bill amount"]], goal: v => `Pay: ${v.what}${v.id ? " for " + v.id : " (use the saved number/biller)"}${v.plan ? ", " + v.plan : ""}. Stop before Pay for my confirmation; I will enter the UPI PIN myself.` },
+  msg: { t: "Message someone", ic: "chat", c: "#25a366", apps: [], fields: [["to", "To (contact name or number)", "Mom / Rahul / 98xxxxxxxx"], ["text", "Message", "Reached safely 👍", true]], goal: null },
   more: { t: "Any app", ic: "bolt", c: "#2b9bb0", apps: [], fields: [["app", "App name", "e.g. BookMyShow, IRCTC, Paytm"], ["goal", "What should Atlas do there?", "e.g. book 2 tickets for the 7 pm show of …", true]], goal: v => v.goal },
   mail: { t: "Write an email", ic: "mail", c: "#a35bd6", apps: [], fields: [["to", "To", "name@example.com"], ["about", "What it's about", "e.g. ask for leave on Monday, polite", true]], goal: null },
 };
 function viewTasks() {
   let h = `<div class="top"><div class="grow"><h1>Tasks</h1><div class="sub">${N.agentOn() ? "Agent is on" : "Agent is off"}${N.agentBusy() ? " · working now" : ""}</div></div>${N.agentBusy() ? `<button class="btn danger sm" data-a="stopAgent">${ic("stop", "s")} Stop</button>` : ""}</div>`;
   if (!N.agentOn()) h += `<div class="card">${setupCard("agent").html}</div>`;
-  h += `<div class="suggest">${Object.entries(TEMPL).map(([k, t]) => `<button class="sg" data-a="templ" data-k="${k}" style="--c:${t.c}"><span class="ic">${ic(t.ic)}</span><b>${t.t}</b><span>${t.apps.length ? t.apps.slice(0, 3).map(appName).join(" · ") + (t.apps.length > 3 ? "…" : "") : k === "more" ? "Any installed app" : "Gmail"}</span></button>`).join("")}</div>`;
+  h += `<div class="suggest">${Object.entries(TEMPL).map(([k, t]) => `<button class="sg" data-a="templ" data-k="${k}" style="--c:${t.c}"><span class="ic">${ic(t.ic)}</span><b>${t.t}</b><span>${t.apps.length ? t.apps.slice(0, 3).map(appName).join(" · ") + (t.apps.length > 3 ? "…" : "") : k === "more" ? "Any installed app" : k === "msg" ? "WhatsApp · SMS" : "Gmail"}</span></button>`).join("")}</div>`;
   h += `<div class="card"><div class="row nowrap"><span class="spark" style="width:38px;height:38px;border-radius:13px">${ic("shield", "s")}</span><div class="grow t2">The agent stops and shows <b>Confirm / Cancel</b> on top of the app before anything is booked, ordered, paid or sent. It never types passwords, OTPs or UPI PINs — it asks you to.</div></div></div>`;
+  h += `<h2>Quick controls</h2><div class="qc">${QUICK.map((q, i) => `<button class="qcb" data-a="quick" data-i="${i}"><span>${ic(q[0])}</span>${q[1]}</button>`).join("")}</div>`;
+  const R = J(N.routines(), []);
+  h += `<div class="row" style="margin:22px 4px 10px"><h2 style="margin:0;flex:1">Reminders & routines</h2><button class="btn tonal sm" data-a="newRoutine">${ic("plus", "s")} New</button></div>`;
+  h += `<div class="card tight">${R.length ? R.map(r => `<div class="li"><span class="ico">${ic(r.kind === "remind" ? "bell" : "repeat")}</span><div class="grow" data-a="editRoutine" data-id="${esc(r.id)}"><div class="tt">${esc(r.name || r.text || r.prompt)}</div><div class="t2" style="white-space:normal">${esc(routineWhen(r))}${r.on && r.next ? " · next " + esc(ago2(r.next)) : r.on ? "" : " · off"}${r.kind !== "remind" ? " · " + (r.auto ? "runs by itself" : "asks first") : ""}</div></div><label class="switch"><input type="checkbox" data-a="togRoutine" data-id="${esc(r.id)}" ${r.on ? "checked" : ""}><span></span></label></div>`).join("") : `<div class="empty">${ic("repeat")}<div>Nothing scheduled. Try “remind me to call the CA every Friday at 5 pm” or “every 1st at 10 am recharge my Jio number”.</div></div>`}</div>`;
   h += `<h2>Activity</h2><div class="card tight" id="log">${logHtml()}</div>`;
   return h;
+}
+function ago2(t) { const d = new Date(t), now = new Date(), tm = d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }); const days = Math.round((new Date(d.toDateString()) - new Date(now.toDateString())) / 86400000); return days === 0 ? "today " + tm : days === 1 ? "tomorrow " + tm : d.toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" }) + " " + tm; }
+const QUICK = [
+  ["torch", "Torch", { type: "device", op: "flashlight" }], ["vol", "Vibrate", { type: "device", op: "ringer", mode: "vibrate" }], ["vol", "Ring", { type: "device", op: "ringer", mode: "normal" }],
+  ["wifi", "Wi-Fi", { type: "phone_task", app: "quick settings", goal: "Toggle Wi-Fi (switch it to the opposite of its current state) in Quick Settings, then report the new state." }],
+  ["bt", "Bluetooth", { type: "phone_task", app: "quick settings", goal: "Toggle Bluetooth in Quick Settings, then report the new state." }],
+  ["moon", "Do not disturb", { type: "phone_task", app: "quick settings", goal: "Toggle Do not disturb in Quick Settings, then report the new state." }],
+  ["plane", "Airplane", { type: "phone_task", app: "quick settings", goal: "Toggle Airplane mode in Quick Settings (confirm first), then report the new state." }],
+  ["battery", "Battery", { type: "device", op: "battery" }], ["clock", "Alarms", { type: "device", op: "show_alarms" }],
+  ["shot", "Screenshot", { type: "device", op: "screenshot" }], ["shield", "Lock", { type: "device", op: "lock" }], ["bell", "Missed?", { type: "chat", text: "What did I miss in my notifications today?" }],
+];
+function routineSheet(r) {
+  r = r || { kind: "remind", time: "09:00", repeat: "once", days: [], day: 1, date: new Date(Date.now() + 86400000).toISOString().slice(0, 10), on: true, auto: false };
+  const sh = openSheet(`<h3>${r.id ? "Edit" : "New"} ${r.kind === "remind" ? "reminder" : "routine"}</h3>
+    <div class="seg" style="margin-top:12px"><button data-k="remind" aria-pressed="${r.kind === "remind"}">Reminder</button><button data-k="run" aria-pressed="${r.kind !== "remind"}">Atlas does it</button></div>
+    <label class="f">Name</label><input id="rn" value="${esc(r.name || "")}" placeholder="e.g. Pay rent">
+    <div id="rkr"><label class="f">Reminder text</label><input id="rt" value="${esc(r.text || "")}" placeholder="Pay rent to landlord"></div>
+    <div id="rkp"><label class="f">What should Atlas do?</label><textarea id="rp" rows="3" placeholder="Recharge my Jio number 98xxxxxxxx with the ₹349 plan on PhonePe">${esc(r.prompt || "")}</textarea>
+      <div class="li" style="padding:10px 2px"><div class="grow"><div class="tt">Start by itself</div><div class="t2" style="white-space:normal">When the phone is unlocked; otherwise you get a notification to tap. It still asks before paying or sending.</div></div><label class="switch"><input type="checkbox" id="ra" ${r.auto ? "checked" : ""}><span></span></label></div></div>
+    <div class="row nowrap" style="margin-top:4px"><div class="grow"><label class="f">Time</label><input id="rtime" type="time" value="${esc(r.time || "09:00")}"></div><div class="grow"><label class="f">Repeat</label><select id="rrep">${["once", "daily", "weekdays", "weekends", "weekly", "monthly"].map(x => `<option value="${x}" ${r.repeat === x ? "selected" : ""}>${x[0].toUpperCase() + x.slice(1)}</option>`).join("")}</select></div></div>
+    <div id="rdate"><label class="f">Date</label><input id="rd" type="date" value="${esc(r.date || "")}"></div>
+    <div id="rdays"><label class="f">Days</label><div class="chips">${DAYS.map((d, i) => `<button class="chip" data-day="${i}" aria-pressed="${(r.days || []).includes(i)}">${d}</button>`).join("")}</div></div>
+    <div id="rdom"><label class="f">Day of month</label><input id="rdm" type="number" min="1" max="31" value="${r.day || 1}"></div>
+    <div class="row end" style="margin-top:16px">${r.id ? `<button class="btn danger sm" id="rdel">Delete</button><span class="grow"></span>` : ""}<button class="btn ghost" id="rc">Cancel</button><button class="btn primary" id="rs">Save</button></div>`);
+  let kind = r.kind === "remind" ? "remind" : "run", days = new Set(r.days || []);
+  const sync = () => { const rep = sh.querySelector("#rrep").value; sh.querySelector("#rkr").classList.toggle("hidden", kind !== "remind"); sh.querySelector("#rkp").classList.toggle("hidden", kind === "remind"); sh.querySelector("#rdate").classList.toggle("hidden", rep !== "once"); sh.querySelector("#rdays").classList.toggle("hidden", rep !== "weekly"); sh.querySelector("#rdom").classList.toggle("hidden", rep !== "monthly"); };
+  sh.querySelectorAll(".seg button").forEach(b => b.onclick = () => { kind = b.dataset.k; sh.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === b)); sync(); });
+  sh.querySelectorAll("[data-day]").forEach(b => b.onclick = () => { const d = +b.dataset.day; days.has(d) ? days.delete(d) : days.add(d); b.setAttribute("aria-pressed", days.has(d)); });
+  sh.querySelector("#rrep").onchange = sync; sync();
+  sh.querySelector("#rc").onclick = () => closeSheet();
+  if (r.id) sh.querySelector("#rdel").onclick = () => { N.deleteRoutine(r.id); closeSheet(); render(); toast("Deleted"); };
+  sh.querySelector("#rs").onclick = async () => {
+    const o = { ...r, kind, name: sh.querySelector("#rn").value.trim(), text: sh.querySelector("#rt").value.trim(), prompt: sh.querySelector("#rp").value.trim(), auto: sh.querySelector("#ra").checked, time: sh.querySelector("#rtime").value || "09:00", repeat: sh.querySelector("#rrep").value, date: sh.querySelector("#rd").value, days: [...days].sort(), day: +sh.querySelector("#rdm").value || 1, on: true };
+    if (kind === "remind" && !o.text && !o.name) { toast("What should I remind you about?"); return; }
+    if (kind === "run" && !o.prompt) { toast("What should Atlas do?"); return; }
+    if (!o.name) o.name = (kind === "remind" ? o.text : o.prompt).slice(0, 40);
+    try { await call("askPerm", "notify"); } catch (e) { }
+    N.saveRoutine(JSON.stringify(o)); closeSheet(); render(); toast("Saved");
+  };
 }
 function logHtml() {
   const L = J(N.agentLog(), []).slice(-60).reverse();
@@ -707,6 +830,7 @@ function templSheet(k, preset) {
     if (k === "more") { if (!v.app || !v.goal) { toast("Add the app and what to do"); return; } app = v.app; }
     closeSheet(); go("assistant");
     if (k === "mail") { send(`Draft an email to ${v.to || "(ask me)"}: ${v.about}`); return; }
+    if (k === "msg") { if (!v.to || !v.text) { toast("Add who and what"); return; } (async () => { addMsg({ role: "user", text: `WhatsApp ${v.to}: ${v.text}` }); const m = addMsg({ role: "ai", text: "", cards: [] }); const c = await contactCard({ type: "message", via: "whatsapp", contact: v.to, text: v.text }); m.cards.push(c); updateMsg(m); saveChat(); })(); return; }
     const goal = t.goal(v);
     addMsg({ role: "user", text: `${t.t} on ${appName(app)} — ${goal}` });
     const m = addMsg({ role: "ai", text: "On it — opening " + appName(app) + ". I'll ask you before the final step.", cards: [] });
@@ -731,6 +855,8 @@ function viewSettings() {
     ${perm(N.hasFiles(), "All files access", "Search, describe and organise files", "askFiles", "Allow")}
     ${perm(N.agentOn(), "Phone agent (accessibility)", "Tap and type in Uber, Swiggy, Gmail… On Android 13+, if it's greyed out: App info → ⋮ → Allow restricted settings.", "openA11y", "Turn on")}
     ${N.agentOn() ? "" : `<div class="row end" style="padding:0 6px 8px"><button class="btn ghost sm" data-a="openAppInfo">Open App info</button></div>`}
+    ${perm(N.notifAccess(), "Notification access", "For “what did I miss?” summaries", "notifAccess", "Allow")}
+    ${[["contacts", "Contacts", "Find people to call or message"], ["call", "Phone calls", "Call directly instead of opening the dialer"], ["sms", "SMS", "Send texts you approve in chat"], ["notify", "Notifications", "Reminders and routines"]].map(([k, t, d]) => N.hasPerm(k) ? perm(true, t, d) : `<div class="li"><span class="ico" style="background:var(--sc-high);color:var(--on-surface-v)">${ic("shield")}</span><div class="grow"><div class="tt">${t}</div><div class="t2" style="white-space:normal">${d} · optional</div></div><button class="btn tonal sm" data-a="permAsk" data-k="${k}">Allow</button></div>`).join("")}
   </div>
   <h2>About you</h2><div class="card">
     <div class="t2">Used for email sign-offs and when you say “home” or “office”. Stays on this phone and goes to the AI only with your requests.</div>
@@ -801,6 +927,34 @@ document.addEventListener("click", async e => {
       break;
     }
     case "stopAgent": N.stopAgent(); toast("Stopping…"); break;
+    case "quick": {
+      const q = QUICK[+el.dataset.i][2]; tick();
+      if (q.type === "device") { if (["screenshot", "lock"].includes(q.op) && !N.agentOn()) { toast("Turn on the Atlas agent first"); break; } const r = J(N.device(JSON.stringify(q)), {}); toast(r.text || "Done"); break; }
+      if (q.type === "chat") { go("assistant"); send(q.text); break; }
+      go("assistant"); addMsg({ role: "user", text: QUICK[+el.dataset.i][1] }); const m = addMsg({ role: "ai", text: "", cards: [] }); queueTasks(m, [{ app: q.app, goal: q.goal }]); break;
+    }
+    case "newRoutine": routineSheet(); break;
+    case "editRoutine": { const r = J(N.routines(), []).find(x => x.id === el.dataset.id); if (r) routineSheet(r); break; }
+    case "notifAccess": N.openNotifAccess(); break;
+    case "permContacts": call("askPerm", "contacts").then(() => toast("Thanks — ask again")).catch(() => toast("Contacts permission was denied")); break;
+    case "permAsk": call("askPerm", el.dataset.k).then(() => render()).catch(() => { toast("Denied — you can allow it in App info"); }); break;
+    case "pickContact": { const [m, c] = card(); if (!c) break; c.pick = +el.dataset.j; readContactFields(m.id, c); saveChat(); updateMsg(m); break; }
+    case "contactGo": {
+      const [m, c] = card(); if (!c) break; readContactFields(m.id, c);
+      const ch = c.choices[c.pick] || (c.num ? { name: c.num, number: c.num } : null);
+      if (!ch) { toast("Add a number"); break; }
+      if (c.mode === "call") { try { await call("askPerm", "call"); } catch (err) { } const r = J(N.device(JSON.stringify({ op: "call", number: ch.number, name: ch.name })), {}); toast(r.text); if (r.ok) c.state = "done"; }
+      else if (c.mode === "sms") { try { await call("askPerm", "sms"); } catch (err) { } const r = J(N.device(JSON.stringify({ op: "sms", number: ch.number, name: ch.name, text: c.text })), {}); toast(r.text); if (r.ok) c.state = "done"; }
+      else {
+        const r = J(N.device(JSON.stringify({ op: "whatsapp", number: ch.number, text: c.text })), {}); if (!r.ok) { toast(r.text); break; }
+        c.state = "done";
+        if (N.agentOn() && N.aiReady()) setTimeout(() => {
+          const ok = N.runTasks(JSON.stringify([{ app: "whatsapp", nolaunch: true, allow: "send", goal: `A WhatsApp chat with ${ch.name} is open with this message typed: "${c.text}". If WhatsApp asks to choose an account or shows a 'Continue to chat' button, tap it. Then tap the Send button. The user has already approved sending — do not ask again. Then use done.` }]));
+          if (ok === "ok") { m.cards.push({ kind: "tasks", tasks: [{ app: "whatsapp", goal: "Send the message to " + ch.name, status: "running", steps: [] }], state: "running" }); S.run = { msgId: m.id }; saveChat(); updateMsg(m); }
+        }, 2500); else toast("Chat opened — tap send");
+      }
+      saveChat(); updateMsg(m); break;
+    }
     case "applyOrg": { const [m, c] = card(); if (!c) break; applyOrganize(c); saveChat(); updateMsg(m); break; }
     case "undoOrg": { const [m, c] = card(); if (!c) break; undoOrganize(c); saveChat(); updateMsg(m); break; }
     // files
@@ -870,10 +1024,12 @@ document.addEventListener("change", e => {
   if (el.dataset.a === "tog") setPref(el.dataset.k, el.checked ? "1" : "0");
   if (el.dataset.a === "togb") N.setBool(el.dataset.k, el.checked);
   if (el.dataset.a === "steps") N.setInt("max_steps", +el.value);
+  if (el.dataset.a === "togRoutine") { const r = J(N.routines(), []).find(x => x.id === el.dataset.id); if (r) { r.on = el.checked; N.saveRoutine(JSON.stringify(r)); setTimeout(() => S.tab === "tasks" && render(), 200); } }
   if (el.dataset.pref) setPref(el.dataset.pref, el.value.trim());
   if (el.dataset.f) { const m = S.chat.find(x => x.id === el.dataset.m); const c = m && m.cards[+el.dataset.c]; if (c) { c[el.dataset.f] = el.value; saveChat(); } }
 });
 document.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "fq") { e.preventDefault(); document.querySelector('[data-a="fsearch"]').click(); } });
+function readContactFields(mid, c) { document.querySelectorAll(`[data-f][data-m="${mid}"]`).forEach(i => c[i.dataset.f] = i.value); }
 function saveInputs() { document.querySelectorAll("[data-pref]").forEach(i => setPref(i.dataset.pref, i.value.trim())); }
 function readEmailFields(mid, c) { document.querySelectorAll(`[data-f][data-m="${mid}"]`).forEach(i => c[i.dataset.f] = i.value); saveChat(); }
 function refreshFiles() { if (S.tab !== "files") return; if (S.files.mode === "list") loadList(); render(); }
@@ -914,7 +1070,7 @@ window.atlasBack = () => {
 };
 window.atlasResume = () => { appsCache = null; if (!sheetEl && S.tab !== "assistant") render(); else if (S.tab === "assistant" && !S.chat.length) render(); else if (S.tab === "assistant") { const m = S.run && S.chat.find(x => x.id === S.run.msgId); if (m) updateMsg(m); } if (N.hasFiles() && !J(N.stats(), {}).files && !J(N.stats(), {}).scanning) call("scan").then(() => S.tab === "files" && render()); };
 window.atlasIndexed = () => { if (S.tab === "files" && !sheetEl) render(); };
-window.atlasShared = o => { go("assistant"); if (o.path) { S.pend = [o.path]; renderPend(); } if (o.text) { $("#q").value = o.text; autosize(); } $("#q").focus(); };
+window.atlasShared = o => { go("assistant"); if (o.run) { setTimeout(() => send(o.run), 300); return; } if (o.path) { S.pend = [o.path]; renderPend(); } if (o.text) { $("#q").value = o.text; autosize(); } $("#q").focus(); };
 document.addEventListener("pointerdown", e => { // long-press to start selecting in file lists
   const el = e.target.closest('.view [data-a="file"]'); if (!el || S.tab !== "files" || !["list", "browse"].includes(S.files.mode)) return;
   const x0 = e.clientX, y0 = e.clientY;
@@ -945,6 +1101,7 @@ function mockNative() {
     info: p => JSON.stringify(files.find(f => f.p === p) || { missing: true }), root: () => "/storage/emulated/0", duplicates(id) { atlasCb(id, true, JSON.stringify({ groups: [], wasted: 0, count: 0 })); },
     move: () => '{"ok":true,"path":"x"}', rename: () => '{"ok":true,"path":"x"}', mkdir: () => '{"ok":true}', trash: () => '{"ok":true,"path":"x"}', putContent() { }, clearContent() { }, open() { }, share() { },
     aiReady: () => true, ai(req, id) { setTimeout(() => atlasCb(id, true, JSON.stringify({ say: "On it — opening Uber.", actions: [{ type: "phone_task", app: "uber", goal: "Book an Uber Go from current location to Nashik Road station" }, { type: "email", to: "manager@sbi.co.in", subject: "Leave on Monday", body: "Dear Sir,\n\nI request leave on Monday.\n\nRegards,\nVishwajeet" }] })), 600); },
+    device: j => JSON.stringify({ ok: true, text: "Done: " + JSON.parse(j).op }), contacts: q => JSON.stringify({ perm: true, items: [{ name: q + " Patil", number: "+91 98220 12345", type: "mobile" }] }), hasPerm: () => false, askPerm(n, id) { atlasCb(id, true, "granted"); }, notifAccess: () => false, openNotifAccess() { }, notifications: () => "[]", routines: () => JSON.stringify(window._R || []), saveRoutine(j) { const o = JSON.parse(j); o.id = o.id || "r1"; o.next = Date.now() + 86400000; window._R = [o]; return JSON.stringify(o); }, deleteRoutine() { window._R = []; },
     agentBusy: () => false, runTasks: () => "off", stopAgent() { }, agentLog: () => "[]", launch: () => false, email: () => "opened",
   };
 }

@@ -87,6 +87,11 @@ public class AgentService extends AccessibilityService {
     @Override public boolean onUnbind(Intent i) { I = null; hideOverlay(); return super.onUnbind(i); }
 
     static boolean on() { return I != null; }
+
+    boolean global(int action, long delayMs) {
+        if (delayMs > 0) sleep(delayMs);
+        return performGlobalAction(action);
+    }
     static boolean isBusy() { return busy; }
     static void requestStop() { stop = true; AgentService s = I; if (s != null) s.answer("stop"); }
     static String log() { synchronized (LOG) { return LOG.toString(); } }
@@ -135,6 +140,12 @@ public class AgentService extends AccessibilityService {
         JSONObject ex = new JSONObject().put("task", idx);
         event("task", goal, ex);
         showOverlay(label, "Starting: " + goal);
+        String la = app.toLowerCase(Locale.ROOT).replace(" ", "").replace("-", "");
+        if (la.equals("quicksettings") || la.equals("notifications") || la.equals("statusbar")) {
+            performGlobalAction(la.equals("quicksettings") ? GLOBAL_ACTION_QUICK_SETTINGS : GLOBAL_ACTION_NOTIFICATIONS);
+            sleep(1200);
+            app = ""; t.put("nolaunch", true);
+        }
         String pkg = app.isEmpty() ? null : Apps.resolve(this, app);
         if (!app.isEmpty() && pkg == null && !t.optBoolean("nolaunch")) {
             event("fail", app + " isn't installed on this phone.", new JSONObject().put("task", idx));
@@ -701,6 +712,9 @@ public class AgentService extends AccessibilityService {
             + "For shopping (Amazon, Flipkart, Myntra, Meesho, Ajio, Nykaa, JioMart, BigBasket, Croma…): search the product, open a well-rated listing that matches the request (brand, size, colour, budget), pick the variant, Add to cart (or Buy now), go to the cart/checkout, keep the default address and payment, then confirm before the final Place order / Pay button. Never apply for EMI, credit or Pay Later, and skip add-ons like protection plans unless asked. "
             + "For tickets (BookMyShow, IRCTC, redBus, MakeMyTrip): find the show/train/bus, ask_user to choose when there are several sensible options, fill passenger details from saved profiles only, then confirm before paying. "
             + "Any other app works the same way: explore its screens, ask when unsure, confirm before anything final. "
+            + "For bills and recharges (PhonePe, Paytm, Google Pay, Amazon Pay): open Recharge / Bill payments, pick the operator or biller, use the saved number/consumer ID or the one in the GOAL, choose the plan the GOAL names (ask_user listing 2-4 plans with prices if unclear), then confirm before Pay. The user enters the UPI PIN themselves — when the PIN screen appears, use ask_user to tell them to enter it and reply 'done'. "
+            + "For phone settings (Quick Settings is already pulled down when the app is quick settings): tap the tile by its label (Wi-Fi, Bluetooth, Do not disturb, Airplane mode, Auto-rotate, Hotspot, Mobile data, Location, Battery saver); swipe down/scroll to expand if not visible; check the tile state changed, then done. Turning on Airplane mode, or turning off Mobile data/Wi-Fi, needs confirm first. "
+            + "For messages in WhatsApp/Telegram: the chat may already be open with the text typed; check the contact name, then confirm on Send. "
             + "For email in Gmail: the compose screen may already be filled; check To/Subject/Body and use confirm on Send. "
             + "If an action had no effect, try a different element, scroll, or wait. Use done with a one-line summary when the goal is achieved (e.g. ride booked, order placed, or everything is ready), or fail with the reason if it truly can't be done. Element ids change every turn — only use ids from the current list.";
 }

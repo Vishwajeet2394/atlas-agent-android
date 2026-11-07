@@ -47,7 +47,8 @@ import java.util.Map;
 
 public class MainActivity extends Activity {
     private static final String HOST = "appassets.androidplatform.net";
-    private static final int VOICE = 51;
+    private static final int VOICE = 51, PERM = 52;
+    private String permId = null;
     static volatile MainActivity instance;
     private WebView web;
     private boolean pageReady = false;
@@ -102,6 +103,7 @@ public class MainActivity extends Activity {
         });
         handleIntent(getIntent());
         web.loadUrl("https://" + HOST + "/assets/index.html");
+        Routines.reschedule(this);
         if (hasFiles()) FileIndex.get(this).scan(() -> runJs("window.atlasIndexed&&atlasIndexed()"));
     }
 
@@ -126,6 +128,13 @@ public class MainActivity extends Activity {
 
     private void handleIntent(Intent i) {
         if (i == null) return;
+        String rp = i.getStringExtra("run_prompt");
+        if (rp != null) {
+            try { pendingShared = new JSONObject().put("run", rp).put("routine", i.getStringExtra("routine")).toString(); } catch (Exception ignored) { }
+            i.removeExtra("run_prompt");
+            deliverShared();
+            return;
+        }
         if (Intent.ACTION_SEND.equals(i.getAction())) {
             Uri u = i.getParcelableExtra(Intent.EXTRA_STREAM);
             String text = i.getStringExtra(Intent.EXTRA_TEXT);
@@ -183,6 +192,16 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(req, perms, res);
+        if (req != PERM || permId == null) return;
+        boolean ok = res.length > 0;
+        for (int r : res) if (r != android.content.pm.PackageManager.PERMISSION_GRANTED) ok = false;
+        String id = permId; permId = null;
+        cb(id, ok, ok ? "granted" : "denied");
+    }
+
+    @Override
     public void onBackPressed() {
         web.evaluateJavascript("window.atlasBack?String(atlasBack()):'false'", v -> {
             if (!"\"true\"".equals(v) && !"true".equals(v)) MainActivity.super.onBackPressed();
@@ -196,6 +215,16 @@ public class MainActivity extends Activity {
         if (backCb == null) backCb = (OnBackInvokedCallback) () -> runJs("window.atlasBack&&atlasBack()");
         if (on) d.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, (OnBackInvokedCallback) backCb);
         else d.unregisterOnBackInvokedCallback((OnBackInvokedCallback) backCb);
+    }
+
+    private static String permName(String n) {
+        switch (n) {
+            case "contacts": return android.Manifest.permission.READ_CONTACTS;
+            case "call": return android.Manifest.permission.CALL_PHONE;
+            case "sms": return android.Manifest.permission.SEND_SMS;
+            case "notify": return Build.VERSION.SDK_INT >= 33 ? android.Manifest.permission.POST_NOTIFICATIONS : null;
+            default: return null;
+        }
     }
 
     private Uri uriFor(File f) {
@@ -249,6 +278,21 @@ public class MainActivity extends Activity {
         @JavascriptInterface public void openAppInfo() {
             runOnUiThread(() -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))));
         }
+        // ---------- everyday phone actions ----------
+        @JavascriptInterface public String device(String json) { try { return Device.run(MainActivity.this, new JSONObject(json)).toString(); } catch (Exception e) { return "{\"ok\":false,\"text\":\"bad request\"}"; } }
+        @JavascriptInterface public String contacts(String q) { try { return Device.findContacts(MainActivity.this, q); } catch (Exception e) { return "{\"perm\":true,\"items\":[]}"; } }
+        @JavascriptInterface public boolean hasPerm(String name) { String p = permName(name); return p == null || Device.has(MainActivity.this, p); }
+        @JavascriptInterface public void askPerm(String name, String id) {
+            String p = permName(name);
+            if (p == null || Device.has(MainActivity.this, p)) { cb(id, true, "granted"); return; }
+            runOnUiThread(() -> { permId = id; requestPermissions(new String[]{p}, PERM); });
+        }
+        @JavascriptInterface public boolean notifAccess() { return NotifListener.allowed(MainActivity.this); }
+        @JavascriptInterface public void openNotifAccess() { runOnUiThread(() -> startActivity(new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))); }
+        @JavascriptInterface public String notifications(int hours) { return NotifListener.recent(System.currentTimeMillis() - hours * 3600000L); }
+        @JavascriptInterface public String routines() { return Routines.all(MainActivity.this).toString(); }
+        @JavascriptInterface public String saveRoutine(String json) { try { return Routines.upsert(MainActivity.this, new JSONObject(json)); } catch (Exception e) { return "{}"; } }
+        @JavascriptInterface public void deleteRoutine(String id) { Routines.remove(MainActivity.this, id); }
         @JavascriptInterface public String apps() { return Apps.installedJson(MainActivity.this); }
         @JavascriptInterface public String allApps() { return Apps.allLabels(MainActivity.this); }
 

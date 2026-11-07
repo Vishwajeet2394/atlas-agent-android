@@ -240,3 +240,10 @@ label.f{display:block;font-size:12.5px;font-weight:600;color:var(--on-surface-v)
 .dpill button.glide{animation:dglide .6s var(--dk-spring) both}
 .dpill button.enter{animation:denter .6s var(--dk-spring) both}
 body.sheeting .composer{display:none}
+
+/* quick controls */
+.qc{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.qcb{border:none;background:var(--sc-low);border-radius:22px;padding:12px 4px 10px;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--on-surface-v);transition:transform .35s var(--bouncy)}
+.qcb span{width:44px;height:44px;border-radius:16px;display:grid;place-items:center;background:var(--secondary-c);color:var(--on-secondary-c)}
+.qcb:active{transform:scale(.92)}
+@media (min-width:600px){.qc{grid-template-columns:repeat(6,1fr)}}
