@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Atlas</string>
+    <string name="agent_label">Atlas agent</string>
+    <string name="agent_desc">Lets Atlas read the screen and tap, type and scroll in other apps (Uber, Ola, Swiggy, Instamart, Zomato, Gmail…) to carry out tasks you ask for. Atlas always stops and asks you before it books, orders, pays or sends anything. Screen contents are sent only to the AI provider you chose in Settings, and only while a task is running.</string>
+</resources>

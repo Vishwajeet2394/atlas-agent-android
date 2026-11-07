@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<title>Atlas</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<main><div class="view" id="view"></div></main>
+<div class="composer hidden" id="composer">
+  <div class="pend" id="pend"></div>
+  <div class="bar">
+    <button class="iconbtn plain" id="attach" aria-label="Attach a file from your phone"></button>
+    <textarea id="q" rows="1" placeholder="Ask Atlas or give it a task…" aria-label="Message"></textarea>
+    <button class="iconbtn plain" id="mic" aria-label="Speak"></button>
+    <button class="iconbtn send" id="send" aria-label="Send"></button>
+  </div>
+</div>
+<div class="dfade" aria-hidden="true"></div>
+<nav class="dock" id="tabbar" aria-label="Main"></nav>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
