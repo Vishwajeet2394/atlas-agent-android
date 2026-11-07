@@ -165,7 +165,7 @@ const S = {
   chat: store.get("chat", []),
   pend: [],            // files attached to the next message
   files: { mode: "home", kind: null, q: "", sort: "", folder: null, items: [], total: 0, sel: new Set(), dir: null },
-  run: null,           // {msgId} of the task card the agent is working on
+  run: store.get("run", null), // {msgId, t0} of the task card the agent is working on
   undo: store.get("undo", []),
   analyzing: false,
 };
@@ -200,19 +200,22 @@ function dockTo(t) {
 function go(tab) { if (S.tab === tab) { if (tab === "files" && S.files.mode !== "home") { S.files.mode = "home"; render(); } return; } S.tab = tab; store.set("tab", tab); dockTo(tab); render(); scrollTo(0, 0); }
 
 // ---------------- render ----------------
-function render() {
-  const v = $("#view"); v.classList.remove("view"); void v.offsetWidth; v.classList.add("view");
+function render(quiet) {
+  const v = $("#view");
+  if (quiet) v.classList.remove("view"); else { v.classList.remove("view"); void v.offsetWidth; v.classList.add("view"); }
+  const y = quiet ? scrollY : 0;
   $("#composer").classList.toggle("hidden", S.tab !== "assistant");
   if (S.tab === "assistant") v.innerHTML = viewAssistant();
   else if (S.tab === "files") v.innerHTML = viewFiles();
   else if (S.tab === "tasks") v.innerHTML = viewTasks();
   else v.innerHTML = viewSettings();
-  afterRender();
+  afterRender(quiet);
+  if (quiet) scrollTo(0, y);
   canBack();
 }
-function afterRender() {
+function afterRender(quiet) {
   document.querySelectorAll("img[data-lazy]").forEach(img => { img.onload = () => img.classList.add("in"); img.onerror = () => { const t = img.closest(".tile,.ico"); if (t) { img.remove(); } }; });
-  if (S.tab === "assistant") { const m = $(".msgs"); if (m) requestAnimationFrame(() => scrollTo(0, document.body.scrollHeight)); }
+  if (S.tab === "assistant" && !quiet) { const m = $(".msgs"); if (m) requestAnimationFrame(() => scrollTo(0, document.body.scrollHeight)); }
 }
 
 // ================================================================ ASSISTANT
@@ -434,7 +437,7 @@ async function runAction(a, reply, userText) {
     reply.typing = true; updateMsg(reply);
     const parts = [{ text: `Question: ${a.question || userText}\nAnswer from the attached files. Say which file the answer came from. Be specific (amounts, dates, numbers). If the answer isn't in them, say so.` }];
     pick.forEach(f => parts.push({ file: f.p, as: "auto", pages: 5 }));
-    const ans = await ai({ system: "You read the user's own files on their phone and answer questions about them precisely and briefly.", maxTokens: 1500, messages: [{ role: "user", parts }] });
+    const ans = await ai({ deep: true, system: "You read the user's own files on their phone and answer questions about them precisely and briefly.", maxTokens: 1500, messages: [{ role: "user", parts }] });
     reply.typing = false; reply.text = (reply.text ? reply.text + "\n\n" : "") + ans; updateMsg(reply);
   } else if (a.type === "organize") {
     if (!N.hasFiles()) { push(setupCard("files")); return; }
@@ -513,11 +516,22 @@ function startTasks(m, c) {
   if (r === "nokey") { toast("Add an AI key in Settings"); return; }
   if (r !== "ok") { toast("Couldn't start the agent"); return; }
   c.state = "running"; c.tasks.forEach(t => { t.status = ""; t.steps = []; });
-  S.run = { msgId: m.id }; updateMsg(m); saveChat();
+  beginRun(m); updateMsg(m); saveChat();
 }
-window.atlasAgentEvent = ev => {
-  const m = S.run && S.chat.find(x => x.id === S.run.msgId); const c = m && (m.cards || []).find(x => x.kind === "tasks");
-  if (c) {
+function beginRun(m) { S.run = { msgId: m.id, t0: Date.now() - 1500 }; store.set("run", S.run); }
+function runCard() { const m = S.run && S.chat.find(x => x.id === S.run.msgId); const c = m && [...(m.cards || [])].reverse().find(x => x.kind === "tasks"); return [m, c]; }
+// Bring the errand card up to date from the agent's log (events are missed while Atlas is closed).
+function syncRun() {
+  if (!S.run) { S.chat.forEach(m => (m.cards || []).forEach(c => { if (c.kind === "tasks" && c.state === "running" && !N.agentBusy()) c.state = "ended"; })); return; }
+  const [m, c] = runCard(); if (!c) { S.run = null; store.set("run", null); return; }
+  const busy = N.agentBusy(), evs = J(N.agentLog(), []).filter(e => e.t >= S.run.t0);
+  c.tasks.forEach(t => { t.status = ""; t.steps = []; }); c.state = "running";
+  const keep = S.run; evs.forEach(e => applyEvent(e, m, c)); S.run = keep;
+  if (!busy) { if (c.state !== "ended") { c.state = "ended"; c.tasks.forEach(t => { if (t.status === "running") t.status = "cancel"; }); } S.run = null; }
+  store.set("run", S.run); saveChat(); updateMsg(m);
+}
+function applyEvent(ev, m, c) {
+  {
     const t = ev.task != null ? c.tasks[ev.task] : null;
     const add = (tt, cl) => { if (t) { t.steps = t.steps || []; t.steps.push({ t: tt, c: cl }); } };
     switch (ev.type) {
@@ -532,8 +546,11 @@ window.atlasAgentEvent = ev => {
       case "error": if (t) add(ev.text, "bad"); break;
       case "idle": c.state = "ended"; c.tasks.forEach(x => { if (x.status === "running" || !x.status) x.status = ev.text === "Stopped" ? "cancel" : x.status || ""; }); S.run = null; break;
     }
-    saveChat(); updateMsg(m);
   }
+}
+window.atlasAgentEvent = ev => {
+  const [m, c] = runCard();
+  if (c) { applyEvent(ev, m, c); store.set("run", S.run); saveChat(); updateMsg(m); }
   if (S.tab === "tasks") { const box = $("#log"); if (box) box.innerHTML = logHtml(); }
 };
 
@@ -572,9 +589,9 @@ function viewFiles() {
   if (F.mode === "dupes") return viewDupes();
   const st = J(N.stats(), { kinds: {} }), K = st.kinds || {};
   const used = st.cap ? (st.cap - st.free) / st.cap : 0, R = 36, C = 2 * Math.PI * R;
-  const todo = J(N.search("", "todo", "recent", 0, 1, ""), { total: 0 }).total;
+  const todo = st.todo || 0;
   const cats = ["image", "pdf", "doc", "video", "audio", "apk", "archive", "downloads", "screenshots", "whatsapp", "camera", "large"];
-  const count = k => { if (K[k]) return K[k].n + " · " + size(K[k].b); if (["downloads", "screenshots", "whatsapp", "camera", "large"].includes(k)) { const r = J(N.search("", k, "recent", 0, 0, ""), { total: 0, bytes: 0 }); return r.total + " · " + size(r.bytes); } return "0"; };
+  const count = k => K[k] ? K[k].n.toLocaleString("en-IN") + " · " + size(K[k].b) : "0";
   const order = ["image", "video", "audio", "doc", "pdf", "apk", "archive", "other"];
   let h = `<div class="top"><div class="grow"><h1>Files</h1><div class="sub">${st.scanning ? "Indexing… " + (st.count || 0).toLocaleString("en-IN") + " found" : (st.files || 0).toLocaleString("en-IN") + " files" + (st.analyzed ? " · " + st.analyzed + " described" : "")}</div></div><button class="iconbtn" data-a="rescan" aria-label="Rescan">${ic("undo")}</button></div>
   <label class="search">${ic("search")}<input id="fq" type="search" placeholder="Search names and what's inside" value="${esc(F.q)}" enterkeyhint="search"><button class="iconbtn plain" data-a="fsearch" aria-label="Search">${ic("send")}</button></label>
@@ -591,7 +608,7 @@ function viewFiles() {
     <button class="tool" data-a="bin"><span class="ic">${ic("bin")}</span><div><b>Atlas Bin</b><span>Deleted files</span></div></button>
     <button class="tool" data-a="cat" data-k="analyzed"><span class="ic">${ic("eye")}</span><div><b>Described</b><span>${st.analyzed || 0} files</span></div></button>
   </div>
-  <h2>Recent</h2><div class="card tight">${J(N.search("", "any", "recent", 0, 8, ""), { items: [] }).items.map(f => fileRow(f)).join("") || `<div class="empty">${st.scanning ? "Indexing your phone…" : "No files yet"}</div>`}</div>`;
+  <h2>Recent</h2><div class="card tight">${(st.recent || []).map(f => fileRow(f)).join("") || `<div class="empty">${st.scanning ? "Indexing your phone…" : "No files yet"}</div>`}</div>`;
   return h;
 }
 function loadList(append) {
@@ -682,25 +699,25 @@ async function describe(path, quiet) {
 async function askFile(path, q) {
   q = (q || "").trim(); if (!q) return; const box = $("#askans"); if (!box) return;
   box.innerHTML = `<div class="aibox"><span class="typing"><i></i><i></i><i></i></span></div>`;
-  try { const a = await ai({ system: "Answer questions about the user's own file precisely. Use ₹ for rupees.", maxTokens: 1500, messages: [{ role: "user", parts: [{ file: path, as: "auto", pages: 8 }, { text: q }] }] }); box.innerHTML = `<div class="aibox">${md(a)}</div>`; }
+  try { const a = await ai({ deep: true, system: "Answer questions about the user's own file precisely. Use ₹ for rupees.", maxTokens: 1500, messages: [{ role: "user", parts: [{ file: path, as: "auto", pages: 8 }, { text: q }] }] }); box.innerHTML = `<div class="aibox">${md(a)}</div>`; }
   catch (e) { box.innerHTML = `<div class="aibox" style="color:var(--error)">${esc(e.message)}</div>`; }
 }
 
 // ---------- background describing ----------
 async function analyzeAll() {
-  if (S.analyzing) { S.analyzing = false; toast("Stopping after the current file"); return; }
+  if (S.analyzing) { S.analyzing = false; toast("Stopping after the current file"); render(true); return; }
   if (!N.aiReady()) { toast("Add an AI key in Settings first"); return; }
   const r = J(N.search("", "todo", "recent", 0, 400, ""), { items: [] });
   if (!r.items.length) { toast("Everything is already described"); return; }
   const limit = +(PREF().analyze_batch || 60);
-  S.analyzing = true; if (S.tab === "files") render();
+  S.analyzing = true; if (S.tab === "files") render(true);
   let done = 0, fail = 0;
   for (const f of r.items.slice(0, limit)) {
     if (!S.analyzing) break;
     try { await describe(f.p, true); done++; } catch (e) { fail++; if (/rate|quota|429/i.test(e.message)) { toast("Rate limited — pausing 30 s"); await new Promise(r => setTimeout(r, 30000)); } if (fail > 5 && !done) { toast(e.message); break; } }
-    if (done % 5 === 0 && S.tab === "files" && S.files.mode === "home") render();
+    if (done % 5 === 0 && S.tab === "files" && S.files.mode === "home" && !sheetEl) render(true);
   }
-  S.analyzing = false; toast("Described " + done + " files" + (fail ? " · " + fail + " skipped" : "")); if (S.tab === "files") render();
+  S.analyzing = false; toast("Described " + done + " files" + (fail ? " · " + fail + " skipped" : "")); if (S.tab === "files" && !sheetEl) render(true);
 }
 
 // ---------- pickers ----------
@@ -904,7 +921,7 @@ document.addEventListener("click", async e => {
       if (r.startsWith("error")) { toast("Couldn't open a mail app"); break; }
       c.state = "sent"; c.app = "Gmail"; saveChat(); updateMsg(m);
       if (send && r !== "agent") toast(N.agentOn() ? "Opened Gmail — tap Send" : "Opened Gmail — tap Send (turn on the agent to send automatically)");
-      if (r === "agent") { const tc = { kind: "tasks", tasks: [{ app: "gmail", goal: "Send the email to " + c.to, status: "running", steps: [] }], state: "running" }; m.cards.push(tc); S.run = { msgId: m.id }; saveChat(); updateMsg(m); }
+      if (r === "agent") { const tc = { kind: "tasks", tasks: [{ app: "gmail", goal: "Send the email to " + c.to, status: "", steps: [] }], state: "running" }; m.cards.push(tc); beginRun(m); S.run.t0 += 4000; store.set("run", S.run); saveChat(); updateMsg(m); }
       break;
     }
     case "emailAttach": { const [m, c] = card(); if (!c) break; readEmailFields(m.id, c); pickFiles("Attach files", l => { c.attach = [...new Set([...(c.attach || []), ...l])]; saveChat(); updateMsg(m); }); break; }
@@ -950,7 +967,7 @@ document.addEventListener("click", async e => {
         c.state = "done";
         if (N.agentOn() && N.aiReady()) setTimeout(() => {
           const ok = N.runTasks(JSON.stringify([{ app: "whatsapp", nolaunch: true, allow: "send", goal: `A WhatsApp chat with ${ch.name} is open with this message typed: "${c.text}". If WhatsApp asks to choose an account or shows a 'Continue to chat' button, tap it. Then tap the Send button. The user has already approved sending — do not ask again. Then use done.` }]));
-          if (ok === "ok") { m.cards.push({ kind: "tasks", tasks: [{ app: "whatsapp", goal: "Send the message to " + ch.name, status: "running", steps: [] }], state: "running" }); S.run = { msgId: m.id }; saveChat(); updateMsg(m); }
+          if (ok === "ok") { m.cards.push({ kind: "tasks", tasks: [{ app: "whatsapp", goal: "Send the message to " + ch.name, status: "", steps: [] }], state: "running" }); beginRun(m); saveChat(); updateMsg(m); }
         }, 2500); else toast("Chat opened — tap send");
       }
       saveChat(); updateMsg(m); break;
@@ -1068,9 +1085,9 @@ window.atlasBack = () => {
   if (S.tab !== "assistant") { go("assistant"); return true; }
   return false;
 };
-window.atlasResume = () => { appsCache = null; if (!sheetEl && S.tab !== "assistant") render(); else if (S.tab === "assistant" && !S.chat.length) render(); else if (S.tab === "assistant") { const m = S.run && S.chat.find(x => x.id === S.run.msgId); if (m) updateMsg(m); } if (N.hasFiles() && !J(N.stats(), {}).files && !J(N.stats(), {}).scanning) call("scan").then(() => S.tab === "files" && render()); };
+window.atlasResume = () => { appsCache = null; syncRun(); if (!sheetEl && S.tab !== "assistant") render(); else if (S.tab === "assistant" && !S.chat.length) render(); else if (S.tab === "assistant") { const m = S.run && S.chat.find(x => x.id === S.run.msgId); if (m) updateMsg(m); } if (N.hasFiles() && !J(N.stats(), {}).files && !J(N.stats(), {}).scanning) call("scan").then(() => S.tab === "files" && render()); };
 window.atlasIndexed = () => { if (S.tab === "files" && !sheetEl) render(); };
-window.atlasShared = o => { go("assistant"); if (o.run) { setTimeout(() => send(o.run), 300); return; } if (o.path) { S.pend = [o.path]; renderPend(); } if (o.text) { $("#q").value = o.text; autosize(); } $("#q").focus(); };
+window.atlasShared = o => { if (o.tab && TABS.includes(o.tab)) { go(o.tab); return; } go("assistant"); if (o.run) { setTimeout(() => send(o.run), 300); return; } if (o.path) { S.pend = [o.path]; renderPend(); } if (o.text) { $("#q").value = o.text; autosize(); } $("#q").focus(); };
 document.addEventListener("pointerdown", e => { // long-press to start selecting in file lists
   const el = e.target.closest('.view [data-a="file"]'); if (!el || S.tab !== "files" || !["list", "browse"].includes(S.files.mode)) return;
   const x0 = e.clientX, y0 = e.clientY;
@@ -1083,8 +1100,9 @@ let lpPath = null;
 document.addEventListener("click", e => { if (lpPath) { const el = e.target.closest('[data-a="file"]'); lpPath = null; if (el) e.stopImmediatePropagation(); } }, true);
 
 // ---------- start ----------
-applyTheme(); renderDock(); render();
-setInterval(() => { if (S.tab === "files" && S.files.mode === "home" && !sheetEl && J(N.stats(), {}).scanning) render(); }, 2500);
+applyTheme(); try { syncRun(); } catch (e) { } renderDock(); render();
+let lastScan = -1;
+setInterval(() => { if (S.tab !== "files" || S.files.mode !== "home" || sheetEl) return; const st = J(N.stats(), {}); if (st.scanning && st.count !== lastScan) { lastScan = st.count; const sub = $(".top .sub"); if (sub) sub.textContent = "Indexing… " + (st.count || 0).toLocaleString("en-IN") + " found"; } else if (!st.scanning && lastScan !== -1) { lastScan = -1; render(true); } }, 1500);
 
 // ================================================================ browser preview (no Android)
 function mockNative() {

@@ -101,6 +101,7 @@ public class AgentService extends AccessibilityService {
             JSONObject o = extra == null ? new JSONObject() : extra;
             o.put("type", type).put("text", text).put("t", System.currentTimeMillis());
             synchronized (LOG) { LOG.put(o); while (LOG.length() > 400) LOG.remove(0); }
+            android.util.Log.i("AtlasAgent", type + ": " + text);
             MainActivity.agentEvent(o);
         } catch (Exception ignored) { }
     }
@@ -153,19 +154,25 @@ public class AgentService extends AccessibilityService {
             sleep(2500);
             return "fail";
         }
-        if (pkg != null && !t.optBoolean("nolaunch")) { Apps.launch(this, pkg); sleep(3000); }
+        if (pkg != null && !t.optBoolean("nolaunch")) { Apps.launch(this, pkg); waitForPackage(pkg, 8000); }
+        else sleep(600);
         List<String> history = new ArrayList<>();
         List<String> answers = new ArrayList<>();
         int maxSteps = Ai.prefs(this).getInt("max_steps", 45);
         boolean useShot = Ai.prefs(this).getBoolean("screenshots", true);
-        String lastSig = ""; int same = 0;
+        String lastSig = ""; int same = 0, badJson = 0;
+        boolean approved = false, wantShot = true, lastFailed = false;
         for (int step = 1; step <= maxSteps; step++) {
             if (stop) return "stop";
-            waitIdle(800, 5000);
-            Screen sc = capture(useShot);
+            waitIdle(450, 3000);
+            Screen sc = capture(false);
             if (sc == null) { history.add("(screen unreadable, waited)"); sleep(1500); continue; }
             if (sc.text.equals(lastSig)) same++; else { same = 0; lastSig = sc.text; }
-            status(label + " · step " + step, "Looking at " + Apps.label(this, sc.pkg) + "…");
+            // screenshots cost time: send one when the element list is thin, the screen is new to us, or we're stuck
+            boolean shot = useShot && (wantShot || lastFailed || same >= 1 || sc.labeled < 12 || step == 1);
+            if (shot) sc.shot = screenshot();
+            wantShot = false; lastFailed = false;
+            status(label + " · step " + step, "Looking at " + label(sc.pkg) + "…");
             JSONObject req = new JSONObject().put("system", SYSTEM).put("json", true).put("maxTokens", 1200);
             StringBuilder u = new StringBuilder();
             u.append("GOAL: ").append(goal).append('\n');
@@ -176,20 +183,30 @@ public class AgentService extends AccessibilityService {
                 for (int i = Math.max(0, history.size() - 10); i < history.size(); i++) u.append(i + 1).append(". ").append(history.get(i)).append('\n');
             }
             if (same >= 2) u.append("WARNING: the screen has not changed for ").append(same).append(" steps — your last action had no effect. Try something different.\n");
-            u.append("CURRENT APP: ").append(Apps.label(this, sc.pkg)).append(" (").append(sc.pkg).append(")\n");
+            u.append("CURRENT APP: ").append(label(sc.pkg)).append(" (").append(sc.pkg).append(")\n");
             u.append("SCREEN ").append(sc.w).append('x').append(sc.h).append(" ELEMENTS:\n").append(sc.text);
             JSONArray parts = new JSONArray().put(new JSONObject().put("text", u.toString()));
             if (sc.shot != null) parts.put(new JSONObject().put("mime", "image/jpeg").put("data", sc.shot));
             req.put("messages", new JSONArray().put(new JSONObject().put("role", "user").put("parts", parts)));
+            String raw = null;
+            for (int attempt = 0; attempt < 4 && raw == null && !stop; attempt++) {
+                try { raw = Ai.call(this, req); }
+                catch (Exception e) {
+                    String m = String.valueOf(e.getMessage());
+                    boolean rate = m.toLowerCase(Locale.ROOT).contains("rate") || m.contains("429") || m.toLowerCase(Locale.ROOT).contains("overloaded") || m.contains("503");
+                    if (m.contains("API key") || m.contains("Settings first") || attempt == 3) { event("fail", "Couldn't reach the AI: " + m, new JSONObject().put("task", idx)); return "fail"; }
+                    int wait = rate ? new int[]{8, 20, 40}[attempt] : 3;
+                    status(label, (rate ? "AI is busy — waiting " : "Network hiccup — retrying in ") + wait + " s…");
+                    sleep(wait * 1000L);
+                }
+            }
+            if (stop || raw == null) return "stop";
             JSONObject a;
-            try {
-                a = Ai.parseJson(Ai.call(this, req));
-            } catch (Exception e) {
-                event("error", "AI error: " + e.getMessage(), new JSONObject().put("task", idx));
-                status(label, "AI error — retrying…");
-                sleep(4000);
-                try { a = Ai.parseJson(Ai.call(this, req)); }
-                catch (Exception e2) { event("fail", "Couldn't reach the AI: " + e2.getMessage(), new JSONObject().put("task", idx)); return "fail"; }
+            try { a = Ai.parseJson(raw); badJson = 0; }
+            catch (Exception e) {
+                if (++badJson >= 3) { event("fail", "The AI kept replying in the wrong format.", new JSONObject().put("task", idx)); return "fail"; }
+                history.add("(your last reply was not valid JSON — reply with one JSON object only)");
+                continue;
             }
             String act = a.optString("action", "wait").toLowerCase(Locale.ROOT);
             String thought = a.optString("thought", "");
@@ -200,6 +217,14 @@ public class AgentService extends AccessibilityService {
                 case "tap": case "click": case "long_press": {
                     if (n == null) { history.add("tap failed: no element [" + id + "]"); break; }
                     boolean sensitive = SENSITIVE.matcher(n.label.trim()).find() && !(allow.equals("send") && n.label.trim().toLowerCase(Locale.ROOT).startsWith("send"));
+                    if (sensitive && approved) { // the user already said yes to this step
+                        approved = false;
+                        status(label + " · step " + step, "Tapping " + q(n.label));
+                        boolean ok = tap(n);
+                        history.add((ok ? "tapped (approved)" : "tap FAILED on") + " [" + id + "] " + q(n.label));
+                        lastFailed = !ok;
+                        break;
+                    }
                     if (sensitive) {
                         String r = confirm(label, a.optString("summary", "Atlas is about to tap “" + n.label + "”."), n, sc);
                         if (!"ok".equals(r)) return r;
@@ -210,12 +235,14 @@ public class AgentService extends AccessibilityService {
                     status(label + " · step " + step, short_(thought, "Tapping " + q(n.label)));
                     boolean ok = "long_press".equals(act) ? longPress(n) : tap(n);
                     history.add((ok ? "tapped" : "tap FAILED on") + " [" + id + "] " + q(n.label));
+                    lastFailed = !ok;
                     break;
                 }
                 case "type": {
                     String text = a.optString("text", "");
                     status(label + " · step " + step, "Typing " + q(text));
                     boolean ok = type(n, text);
+                    lastFailed = !ok;
                     if (ok && a.optBoolean("enter")) { sleep(300); pressEnter(); }
                     history.add((ok ? "typed " : "typing FAILED: ") + q(text) + (n != null ? " into [" + id + "] " + q(n.label) : ""));
                     break;
@@ -229,10 +256,11 @@ public class AgentService extends AccessibilityService {
                 }
                 case "back": performGlobalAction(GLOBAL_ACTION_BACK); history.add("pressed Back"); break;
                 case "home": performGlobalAction(GLOBAL_ACTION_HOME); history.add("pressed Home"); break;
-                case "wait": status(label + " · step " + step, short_(thought, "Waiting for the app…")); sleep(2500); history.add("waited"); break;
+                case "wait": status(label + " · step " + step, short_(thought, "Waiting for the app…")); sleep(1800); history.add("waited"); break;
+                case "look": wantShot = true; history.add("asked for a screenshot"); break;
                 case "open_app": {
                     String p2 = Apps.resolve(this, a.optString("app"));
-                    if (p2 != null) { Apps.launch(this, p2); sleep(2500); history.add("opened " + Apps.label(this, p2)); }
+                    if (p2 != null) { Apps.launch(this, p2); waitForPackage(p2, 8000); history.add("opened " + label(p2)); }
                     else history.add("open_app FAILED: " + a.optString("app") + " not installed");
                     break;
                 }
@@ -248,7 +276,8 @@ public class AgentService extends AccessibilityService {
                 case "confirm": {
                     String r = confirm(label, a.optString("summary", "Ready for the final step."), n, sc);
                     if (!"ok".equals(r)) return r;
-                    history.add(n != null ? "user CONFIRMED and tapped [" + id + "] " + q(n.label) : "user confirmed");
+                    if (n == null) approved = true; // no button given: let the next final-step tap through without asking twice
+                    history.add(n != null ? "user CONFIRMED and tapped [" + id + "] " + q(n.label) : "user CONFIRMED — now tap the final button");
                     break;
                 }
                 case "done": {
@@ -266,13 +295,16 @@ public class AgentService extends AccessibilityService {
                     sleep(2500);
                     return "fail";
                 }
-                default: history.add("unknown action " + act); sleep(800);
+                default: history.add("unknown action " + act); sleep(400);
             }
-            sleep(700);
+            sleep(350);
         }
         event("fail", "Stopped after the step limit without finishing.", new JSONObject().put("task", idx));
         return "fail";
     }
+
+    private static final java.util.Map<String, String> LABELS = new java.util.concurrent.ConcurrentHashMap<>();
+    private String label(String pkg) { if (pkg == null || pkg.isEmpty()) return "the phone"; return LABELS.computeIfAbsent(pkg, k -> Apps.label(this, k)); }
 
     private static String q(String s) { if (s == null) s = ""; if (s.length() > 60) s = s.substring(0, 57) + "…"; return "“" + s + "”"; }
     private static String short_(String t, String fb) { if (t == null || t.isEmpty()) return fb; return t.length() > 110 ? t.substring(0, 107) + "…" : t; }
@@ -316,20 +348,45 @@ public class AgentService extends AccessibilityService {
 
     // ============================================================ screen reading
     static final class Node { AccessibilityNodeInfo n; String label; String cls; Rect b; boolean click, edit, scroll; }
-    static final class Screen { List<Node> nodes = new ArrayList<>(); String text = ""; String pkg = ""; String shot; int w, h; }
+    static final class Screen { List<Node> nodes = new ArrayList<>(); String text = ""; String pkg = ""; String shot; int w, h, labeled; }
 
+    private boolean ours(AccessibilityNodeInfo r) { return r != null && r.getPackageName() != null && getPackageName().contentEquals(r.getPackageName()); }
+
+    /** The window the user is looking at — an app, or the notification shade / Quick Settings — never our own overlay. */
     private AccessibilityNodeInfo appRoot() {
-        AccessibilityNodeInfo r = getRootInActiveWindow();
-        if (r != null && !getPackageName().contentEquals(r.getPackageName() == null ? "" : r.getPackageName())) return r;
-        // the active window may be our own overlay or Atlas itself — find the app window underneath
+        AccessibilityNodeInfo active = getRootInActiveWindow();
         try {
-            for (AccessibilityWindowInfo w : getWindows()) {
-                if (w.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) continue;
+            List<AccessibilityWindowInfo> ws = getWindows();
+            // 1) the active window if it isn't ours, 2) the top-most app/system window that isn't ours
+            for (AccessibilityWindowInfo w : ws) {
+                if (!w.isActive()) continue;
+                int ty = w.getType();
+                if (ty != AccessibilityWindowInfo.TYPE_APPLICATION && ty != AccessibilityWindowInfo.TYPE_SYSTEM) continue;
                 AccessibilityNodeInfo x = w.getRoot();
-                if (x != null && x.getPackageName() != null && !getPackageName().contentEquals(x.getPackageName())) return x;
+                if (x != null && !ours(x)) return x;
             }
+            AccessibilityNodeInfo best = null; int bestLayer = Integer.MIN_VALUE;
+            for (AccessibilityWindowInfo w : ws) {
+                int ty = w.getType();
+                if (ty != AccessibilityWindowInfo.TYPE_APPLICATION && ty != AccessibilityWindowInfo.TYPE_SYSTEM) continue;
+                Rect b = new Rect(); w.getBoundsInScreen(b);
+                if (ty == AccessibilityWindowInfo.TYPE_SYSTEM && b.height() < getResources().getDisplayMetrics().heightPixels / 3) continue; // status/nav bars
+                AccessibilityNodeInfo x = w.getRoot();
+                if (x == null || ours(x)) continue;
+                if (w.getLayer() > bestLayer) { bestLayer = w.getLayer(); best = x; }
+            }
+            if (best != null) return best;
         } catch (Exception ignored) { }
-        return r;
+        return active;
+    }
+
+    private void waitForPackage(String pkg, long maxMs) {
+        long start = SystemClock.uptimeMillis();
+        while (SystemClock.uptimeMillis() - start < maxMs && !stop) {
+            AccessibilityNodeInfo r = appRoot();
+            if (r != null && r.getPackageName() != null && pkg.contentEquals(r.getPackageName()) && r.getChildCount() > 0) { sleep(500); return; }
+            sleep(200);
+        }
     }
 
     private Screen capture(boolean withShot) {
@@ -372,6 +429,7 @@ public class AgentService extends AccessibilityService {
             String cls = cn == null ? "View" : cn.toString(); int dot = cls.lastIndexOf('.'); if (dot >= 0) cls = cls.substring(dot + 1);
             x.cls = cls;
             int idx = s.nodes.size();
+            if (!text.isEmpty() || !desc.isEmpty()) s.labeled++;
             s.nodes.add(x);
             sb.append('[').append(idx).append("] ").append(cls).append(' ').append('"').append(label).append('"');
             List<String> fl = new ArrayList<>();
@@ -697,7 +755,7 @@ public class AgentService extends AccessibilityService {
     // ============================================================ prompt
     static final String SYSTEM = "You are Atlas, an AI agent that operates the user's Android phone (India) through the accessibility API to complete a GOAL. "
             + "Every turn you get the visible UI elements as lines like `[id] Class \"label\" {flags} @x,y`, usually with a screenshot. "
-            + "Reply with ONE JSON object: {\"thought\": \"<=20 words on what you see and why\", \"action\": \"tap|long_press|type|scroll|back|wait|open_app|ask_user|confirm|done|fail\", "
+            + "Reply with ONE JSON object: {\"thought\": \"<=20 words on what you see and why\", \"action\": \"tap|long_press|type|scroll|back|wait|look|open_app|ask_user|confirm|done|fail\", "
             + "\"id\": <element id for tap/type/scroll/confirm>, \"text\": \"for type\", \"enter\": true|false, \"direction\": \"up|down|left|right\", \"app\": \"for open_app\", "
             + "\"question\": \"for ask_user\", \"summary\": \"for confirm/done/fail\"}.\n"
             + "HARD RULES:\n"
@@ -716,5 +774,6 @@ public class AgentService extends AccessibilityService {
             + "For phone settings (Quick Settings is already pulled down when the app is quick settings): tap the tile by its label (Wi-Fi, Bluetooth, Do not disturb, Airplane mode, Auto-rotate, Hotspot, Mobile data, Location, Battery saver); swipe down/scroll to expand if not visible; check the tile state changed, then done. Turning on Airplane mode, or turning off Mobile data/Wi-Fi, needs confirm first. "
             + "For messages in WhatsApp/Telegram: the chat may already be open with the text typed; check the contact name, then confirm on Send. "
             + "For email in Gmail: the compose screen may already be filled; check To/Subject/Body and use confirm on Send. "
+            + "Use look when you need to see the screen (no screenshot this turn and the elements are unclear). Prefer the fewest steps; don't wait unless something is loading. "
             + "If an action had no effect, try a different element, scroll, or wait. Use done with a one-line summary when the goal is achieved (e.g. ride booked, order placed, or everything is ready), or fail with the reason if it truly can't be done. Element ids change every turn — only use ids from the current list.";
 }

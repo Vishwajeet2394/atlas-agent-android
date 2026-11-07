@@ -1,4 +1,4 @@
-name: Build Atlas APK
+name: Build and test Atlas
 on:
   push:
     branches: [main]
@@ -26,14 +26,56 @@ jobs:
           set -o pipefail
           SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"; echo "sdk.dir=$SDK" > local.properties
           gradle assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+          cp app/build/outputs/apk/release/app-release.apk Atlas.apk
       - name: Report build errors
         if: failure()
         run: |
           MSG=$( (grep -A12 "What went wrong" build.log; grep -E "\.java:[0-9]+: error" -A2 build.log) | head -40 | sed ':a;N;$!ba;s/\n/%0A/g')
           echo "::error title=Build failed::$MSG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: Atlas.apk
+
+  smoke:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run on an Android 14 emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: bash .github/smoke/smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke
+          path: smoke-out
+
+  release:
+    needs: smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: apk
       - name: Publish the APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp app/build/outputs/apk/release/app-release.apk Atlas.apk
-          gh release create "v1.0.${{ github.run_number }}" Atlas.apk --title "Atlas 1.0.${{ github.run_number }}" --notes "Tap Atlas.apk below to download, then open it on your Android phone to install." --latest
+          gh release create "v1.0.${{ github.run_number }}" Atlas.apk -R "${{ github.repository }}" --title "Atlas 1.0.${{ github.run_number }}" --notes "Passed the emulator smoke test. Tap Atlas.apk below to download, then open it on your Android phone to install." --latest

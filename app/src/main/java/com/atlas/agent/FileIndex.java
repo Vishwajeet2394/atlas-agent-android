@@ -40,6 +40,9 @@ final class FileIndex {
     volatile boolean scanning = false;
     volatile long scannedAt = 0;
     volatile int scanCount = 0;
+    private final List<Runnable> waiting = new ArrayList<>();
+    private volatile int version = 0;
+    private String statsCache = null; private int statsVersion = -1;
 
     private FileIndex(Context c) { ctx = c; loadContent(); }
 
@@ -86,8 +89,11 @@ final class FileIndex {
 
     // ---------- scanning ----------
     void scan(Runnable done) {
-        if (scanning) return;
-        scanning = true;
+        synchronized (waiting) {
+            if (done != null) waiting.add(done);
+            if (scanning) return; // the running scan will call everyone back
+            scanning = true;
+        }
         new Thread(() -> {
             List<E> out = new ArrayList<>();
             try {
@@ -104,7 +110,7 @@ final class FileIndex {
                         if (n.startsWith(".")) continue;
                         if (f.isDirectory()) {
                             String p = f.getAbsolutePath();
-                            if (p.equals(rp + "/Android/data") || p.equals(rp + "/Android/obb")) continue;
+                            if (p.equals(rp + "/Android/data") || p.equals(rp + "/Android/obb") || p.equals(rp + "/Atlas Bin")) continue;
                             st.push(f);
                         } else out.add(entry(f));
                     }
@@ -113,9 +119,11 @@ final class FileIndex {
             } catch (Exception ignored) { }
             out.sort((a, b) -> Long.compare(b.mtime, a.mtime));
             all = out;
+            version++;
             scannedAt = System.currentTimeMillis();
-            scanning = false;
-            if (done != null) done.run();
+            List<Runnable> cbs;
+            synchronized (waiting) { scanning = false; cbs = new ArrayList<>(waiting); waiting.clear(); }
+            for (Runnable r : cbs) try { r.run(); } catch (Exception ignored) { }
         }, "atlas-scan").start();
     }
 
@@ -145,13 +153,22 @@ final class FileIndex {
 
     // ---------- queries ----------
     String stats() throws Exception {
+        if (!scanning && statsCache != null && statsVersion == version) return statsCache;
         Map<String, long[]> k = new HashMap<>();
-        long total = 0; int analyzed = 0;
+        long total = 0; int analyzed = 0, todo = 0;
+        Set<String> described;
+        synchronized (content) { analyzed = content.size(); described = new HashSet<>(content.keySet()); }
         for (E e : all) {
             long[] v = k.computeIfAbsent(e.kind, x -> new long[2]);
             v[0]++; v[1] += e.size; total += e.size;
+            String extra = e.lpath.contains("/download") ? "downloads" : null;
+            if (extra != null) { long[] d = k.computeIfAbsent(extra, x -> new long[2]); d[0]++; d[1] += e.size; }
+            if (e.lpath.contains("screenshot")) { long[] d = k.computeIfAbsent("screenshots", x -> new long[2]); d[0]++; d[1] += e.size; }
+            if (e.lpath.contains("whatsapp")) { long[] d = k.computeIfAbsent("whatsapp", x -> new long[2]); d[0]++; d[1] += e.size; }
+            if (e.lpath.contains("/dcim/")) { long[] d = k.computeIfAbsent("camera", x -> new long[2]); d[0]++; d[1] += e.size; }
+            if (e.size >= 50L * 1024 * 1024) { long[] d = k.computeIfAbsent("large", x -> new long[2]); d[0]++; d[1] += e.size; }
+            if (("image".equals(e.kind) || "pdf".equals(e.kind)) && !described.contains(e.path)) todo++;
         }
-        synchronized (content) { analyzed = content.size(); }
         JSONObject o = new JSONObject().put("files", all.size()).put("bytes", total).put("scanning", scanning).put("count", scanCount)
                 .put("at", scannedAt).put("analyzed", analyzed);
         JSONObject kinds = new JSONObject();
@@ -159,8 +176,14 @@ final class FileIndex {
         o.put("kinds", kinds);
         // freest space
         File r = root();
-        o.put("free", r.getFreeSpace()).put("cap", r.getTotalSpace());
-        return o.toString();
+        o.put("free", r.getFreeSpace()).put("cap", r.getTotalSpace()).put("todo", todo);
+        // the 8 newest files, so the home screen needs one call
+        JSONArray recent = new JSONArray();
+        for (int i = 0; i < Math.min(8, all.size()); i++) recent.put(json(all.get(i)));
+        o.put("recent", recent);
+        String out = o.toString();
+        if (!scanning) { statsCache = out; statsVersion = version; }
+        return out;
     }
 
     /** kind: image|pdf|video|audio|doc|apk|archive|other|any|large|analyzed|todo. sort: recent|old|size|name|score */
@@ -212,7 +235,8 @@ final class FileIndex {
             case "recent": cmp = (a, b) -> Long.compare(((E) b[0]).mtime, ((E) a[0]).mtime); break;
             default: cmp = toks.length > 0 ? (a, b) -> Double.compare((double) b[1], (double) a[1]) : (a, b) -> Long.compare(((E) b[0]).mtime, ((E) a[0]).mtime);
         }
-        hits.sort(cmp);
+        boolean alreadyRecent = toks.length == 0 && (sort == null || sort.isEmpty() || "recent".equals(sort));
+        if (!alreadyRecent) hits.sort(cmp);
         JSONArray items = new JSONArray();
         long bytes = 0;
         for (Object[] h : hits) bytes += ((E) h[0]).size;
@@ -317,12 +341,13 @@ final class FileIndex {
         } catch (Exception ignored) { }
     }
     void putContent(String path, JSONObject c) {
+        version++;
         File f = new File(path);
         try { c.put("m", f.lastModified()).put("at", System.currentTimeMillis()); } catch (Exception ignored) { }
         synchronized (content) { content.put(path, c); }
         saveContent();
     }
-    void clearContent() { synchronized (content) { content.clear(); } saveContent(); }
+    void clearContent() { synchronized (content) { content.clear(); } version++; saveContent(); }
 
     // ---------- file operations ----------
     private static File unique(File dir, String name) {
@@ -395,6 +420,7 @@ final class FileIndex {
             }
         }
         all = l;
+        version++;
         synchronized (content) {
             JSONObject c = content.remove(from.getAbsolutePath());
             if (c != null && to != null) content.put(to.getAbsolutePath(), c);

@@ -31,11 +31,13 @@ final class Ai {
 
     static boolean ready(Context c) {
         SharedPreferences p = prefs(c);
+        if ("selftest".equals(provider(c))) return true;
         return !p.getString("claude".equals(provider(c)) ? "claude_key" : "gemini_key", "").trim().isEmpty();
     }
 
     static String call(Context c, JSONObject req) throws Exception {
         String prov = req.optString("provider", provider(c));
+        if ("selftest".equals(prov)) return selftest(req);
         JSONArray msgs = resolveFiles(c, req.getJSONArray("messages"));
         return "claude".equals(prov) ? claude(c, req, msgs) : gemini(c, req, msgs);
     }
@@ -110,11 +112,25 @@ final class Ai {
             contents.put(new JSONObject().put("role", "assistant".equals(m.optString("role")) ? "model" : "user").put("parts", parts));
         }
         body.put("contents", contents);
-        JSONObject gc = new JSONObject().put("maxOutputTokens", req.optInt("maxTokens", 4096));
+        // Gemini's thinking counts toward maxOutputTokens, so never send a small cap; keep thinking short for snappy replies.
+        JSONObject gc = new JSONObject().put("maxOutputTokens", Math.max(8192, req.optInt("maxTokens", 4096)));
         if (req.optBoolean("json")) gc.put("responseMimeType", "application/json");
+        String level = req.optBoolean("deep") ? null : "low";
+        boolean thinkOk = p.getBoolean("gemini_thinking_ok:" + model, true);
+        if (level != null && thinkOk && model.startsWith("gemini-3")) gc.put("thinkingConfig", new JSONObject().put("thinkingLevel", level));
+        else if (level != null && thinkOk && model.contains("2.5-flash")) gc.put("thinkingConfig", new JSONObject().put("thinkingBudget", 0));
         body.put("generationConfig", gc);
         String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
-        JSONObject r = post(url, body.toString(), new String[][]{{"x-goog-api-key", key}});
+        JSONObject r;
+        try { r = post(url, body.toString(), new String[][]{{"x-goog-api-key", key}}); }
+        catch (Exception e) {
+            String m = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
+            if (!gc.has("thinkingConfig") || !(m.contains("thinking") || m.contains("invalid json payload") || m.contains("unknown name"))) throw e;
+            // this model doesn't accept the thinking setting — drop it and remember
+            gc.remove("thinkingConfig");
+            p.edit().putBoolean("gemini_thinking_ok:" + model, false).apply();
+            r = post(url, body.toString(), new String[][]{{"x-goog-api-key", key}});
+        }
         JSONArray cands = r.optJSONArray("candidates");
         if (cands == null || cands.length() == 0) {
             JSONObject fb = r.optJSONObject("promptFeedback");
@@ -211,6 +227,27 @@ final class Ai {
             throw new Exception(msg);
         }
         return j;
+    }
+
+    /**
+     * Offline scripted "AI" used only by the emulator self-test (provider = selftest): taps the first element whose
+     * label contains the word after TAP: in the goal, then reports done. Lets CI exercise the whole agent loop.
+     */
+    private static String selftest(JSONObject req) throws Exception {
+        JSONArray msgs = req.getJSONArray("messages");
+        String u = msgs.getJSONObject(msgs.length() - 1).getJSONArray("parts").getJSONObject(0).optString("text");
+        if (!u.contains("ELEMENTS:")) return "{\"say\":\"selftest ok\",\"actions\":[]}";
+        String goal = u.substring(u.indexOf("GOAL:") + 5, u.indexOf('\n')).trim();
+        String want = goal.contains("TAP:") ? goal.substring(goal.indexOf("TAP:") + 4).trim().toLowerCase(Locale.ROOT) : "";
+        if (u.contains("RECENT ACTIONS:") && u.contains("tapped")) return "{\"thought\":\"tapped the target\",\"action\":\"done\",\"summary\":\"Self-test passed: opened " + want + "\"}";
+        String[] lines = u.substring(u.indexOf("ELEMENTS:")).split("\n");
+        for (String l : lines) {
+            if (l.startsWith("[") && l.toLowerCase(Locale.ROOT).contains(want)) {
+                String id = l.substring(1, l.indexOf(']'));
+                return "{\"thought\":\"found " + want + "\",\"action\":\"tap\",\"id\":" + id + "}";
+            }
+        }
+        return "{\"thought\":\"not visible, scrolling\",\"action\":\"scroll\",\"direction\":\"down\"}";
     }
 
     /** Pulls the first JSON object out of a model reply (tolerates code fences and chatter). */

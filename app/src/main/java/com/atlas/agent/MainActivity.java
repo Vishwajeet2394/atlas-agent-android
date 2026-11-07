@@ -128,6 +128,25 @@ public class MainActivity extends Activity {
 
     private void handleIntent(Intent i) {
         if (i == null) return;
+        String goTab = i.getStringExtra("go");
+        if (goTab != null) {
+            try { pendingShared = new JSONObject().put("tab", goTab).toString(); } catch (Exception ignored) { }
+            i.removeExtra("go");
+            deliverShared();
+        }
+        // Emulator self-test (CI only): works only while no AI key has been saved, so it can't touch a real setup.
+        String st = i.getStringExtra("selftest");
+        if (st != null) {
+            i.removeExtra("selftest");
+            android.content.SharedPreferences p = Ai.prefs(this);
+            if (p.getString("gemini_key", "").isEmpty() && p.getString("claude_key", "").isEmpty()) {
+                p.edit().putString("provider", "selftest").apply();
+                try {
+                    JSONArray tasks = new JSONArray().put(new JSONObject().put("app", i.getStringExtra("app") == null ? "settings" : i.getStringExtra("app")).put("goal", st));
+                    new Handler(Looper.getMainLooper()).postDelayed(() -> AgentService.run(tasks), 1500);
+                } catch (Exception ignored) { }
+            }
+        }
         String rp = i.getStringExtra("run_prompt");
         if (rp != null) {
             try { pendingShared = new JSONObject().put("run", rp).put("routine", i.getStringExtra("routine")).toString(); } catch (Exception ignored) { }
