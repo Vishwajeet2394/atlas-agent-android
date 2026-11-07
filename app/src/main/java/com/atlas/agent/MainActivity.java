@@ -250,6 +250,7 @@ public class MainActivity extends Activity {
             runOnUiThread(() -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName()))));
         }
         @JavascriptInterface public String apps() { return Apps.installedJson(MainActivity.this); }
+        @JavascriptInterface public String allApps() { return Apps.allLabels(MainActivity.this); }
 
         // ---------- look ----------
         @JavascriptInterface public void setBars(String color, boolean dark) {

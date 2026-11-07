@@ -72,8 +72,8 @@ public class AgentService extends AccessibilityService {
 
     // anything that commits money or messages
     static final Pattern SENSITIVE = Pattern.compile(
-            "(place\\s*order|pay\\b|pay\\s*₹|pay\\s*rs|pay\\s*now|proceed\\s*to\\s*pay|make\\s*payment|confirm\\s*(ride|booking|order|pickup|and\\s*pay|payment)|"
-                    + "book\\s*(now|ride|uber|ola|auto|cab|moto|mini|sedan|prime|go|xl)|request\\s*(uber|ola|ride|auto|go|moto|premier)|slide\\s*to|swipe\\s*to|^send$|^send\\s|checkout|"
+            "(place\\s*(your\\s*)?order|pay\\s*&\\s*place|complete\\s*(order|purchase|payment)|book\\s*tickets?|pay\\s*and\\s*book|confirm\\s*&\\s*pay|pay\\b|pay\\s*₹|pay\\s*rs|pay\\s*now|proceed\\s*to\\s*pay|make\\s*payment|confirm\\s*(ride|booking|order|pickup|and\\s*pay|payment)|"
+                    + "book\\s*(now|ride|uber|ola|auto|cab|moto|mini|sedan|prime|go|xl)|request\\s*(uber|ola|ride|auto|go|moto|premier)|slide\\s*to|swipe\\s*to|^send$|^send\\s|"
                     + "place\\s*request|^confirm$|^buy\\s*now|order\\s*now|^book$)", Pattern.CASE_INSENSITIVE);
 
     @Override public void onServiceConnected() {
@@ -698,6 +698,9 @@ public class AgentService extends AccessibilityService {
             + "For rides: set pickup (current location is fine) and drop, then show the ride options; pick the cheapest sensible option (e.g. Uber Go / Ola Mini / Auto) unless the GOAL names one, then confirm before booking. "
             + "For food: search the restaurant or dish, prefer well-rated, open, nearby places; add items, customise with defaults, open the cart, review, then confirm before placing the order. "
             + "For groceries (Instamart/Blinkit/Zepto): add every item on the list one by one (search each, pick a popular pack of a normal size), then open the cart, check all items are there, then confirm before paying. "
+            + "For shopping (Amazon, Flipkart, Myntra, Meesho, Ajio, Nykaa, JioMart, BigBasket, Croma…): search the product, open a well-rated listing that matches the request (brand, size, colour, budget), pick the variant, Add to cart (or Buy now), go to the cart/checkout, keep the default address and payment, then confirm before the final Place order / Pay button. Never apply for EMI, credit or Pay Later, and skip add-ons like protection plans unless asked. "
+            + "For tickets (BookMyShow, IRCTC, redBus, MakeMyTrip): find the show/train/bus, ask_user to choose when there are several sensible options, fill passenger details from saved profiles only, then confirm before paying. "
+            + "Any other app works the same way: explore its screens, ask when unsure, confirm before anything final. "
             + "For email in Gmail: the compose screen may already be filled; check To/Subject/Body and use confirm on Send. "
             + "If an action had no effect, try a different element, scroll, or wait. Use done with a one-line summary when the goal is achieved (e.g. ride booked, order placed, or everything is ready), or fail with the reason if it truly can't be done. Element ids change every turn — only use ids from the current list.";
 }

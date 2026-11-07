@@ -65,6 +65,7 @@ const IC = {
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   car: '<path d="M5 17h14M5 17a2 2 0 1 1-4 0v-4l2.5-6A2 2 0 0 1 5.4 6h13.2a2 2 0 0 1 1.9 1l2.5 6v4a2 2 0 1 1-4 0"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/><path d="M3 12h18"/>',
   food: '<path d="M3 2v7a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V2M6 2v20M21 15V2a5 5 0 0 0-5 5v6a2 2 0 0 0 2 2h3zm0 0v7"/>',
+  bag: '<path d="M6 7h12l1 14H5z"/><path d="M9 10V6a3 3 0 0 1 6 0v4"/>',
   cart: '<circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 12.4a2 2 0 0 0 2 1.6h7.6a2 2 0 0 0 2-1.5L21 8H6"/>',
   mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
@@ -211,6 +212,7 @@ const SUGGEST = [
   ["car", "#5b8def", "Book a cab", "Uber, Ola or Rapido", "Book an Uber from my current location to "],
   ["food", "#e5534b", "Order food", "Swiggy or Zomato", "Order a chicken biryani on Swiggy from a well-rated place nearby"],
   ["cart", "#3b9c7a", "Groceries", "Instamart, Blinkit, Zepto", "Order on Instamart: 1 L milk, 6 eggs, 1 kg tomatoes, bread"],
+  ["bag", "#e07b39", "Shop online", "Amazon, Flipkart, Myntra…", "Order on Amazon: "],
   ["mail", "#a35bd6", "Draft an email", "Write and send with Gmail", "Draft an email to "],
   ["search", "#e09b2d", "Find a file", "Search names and contents", "Find my PAN card photo"],
   ["wand", "#2b9bb0", "Tidy Downloads", "Sort into folders", "Organise my Download folder by type"],
@@ -300,7 +302,7 @@ function statusBadge(s) {
   if (s === "running") return `<span class="badge pri">…</span>`;
   return "";
 }
-function appName(a) { a = String(a || "").toLowerCase(); const m = { uber: "Uber", ola: "Ola", rapido: "Rapido", swiggy: "Swiggy", instamart: "Instamart", zomato: "Zomato", blinkit: "Blinkit", zepto: "Zepto", gmail: "Gmail", whatsapp: "WhatsApp" }; return m[a] || (a ? a[0].toUpperCase() + a.slice(1) : "Phone"); }
+function appName(a) { a = String(a || "").toLowerCase(); const m = { uber: "Uber", ola: "Ola", rapido: "Rapido", swiggy: "Swiggy", instamart: "Instamart", zomato: "Zomato", blinkit: "Blinkit", zepto: "Zepto", gmail: "Gmail", whatsapp: "WhatsApp", amazon: "Amazon", flipkart: "Flipkart", myntra: "Myntra", meesho: "Meesho", ajio: "AJIO", nykaa: "Nykaa", jiomart: "JioMart", bigbasket: "BigBasket", bookmyshow: "BookMyShow", irctc: "IRCTC", redbus: "redBus", makemytrip: "MakeMyTrip" }; return m[a] || (a ? a[0].toUpperCase() + a.slice(1) : "Phone"); }
 
 // ---------- sending ----------
 function addMsg(m) { m.id = m.id || uid(); S.chat.push(m); saveChat(); if (S.tab === "assistant") { if (!$(".msgs")) render(); else updateMsg(m); } return m; }
@@ -347,10 +349,12 @@ function installedApps() { if (!appsCache) appsCache = J(N.apps(), []); return a
 async function route(text, files) {
   const p = PREF();
   const apps = installedApps().map(a => a.key + " (" + a.label + ")").join(", ") || "unknown";
+  let all = []; try { all = J(N.allApps(), []); } catch (e) { }
   const sys = `You are Atlas, an AI assistant built into the user's Android phone in India. Today is ${new Date().toLocaleString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" })}.
 ${p.user_name ? "The user's name is " + p.user_name + "." : ""}${p.user_email ? " Their email is " + p.user_email + "." : ""}${p.user_home ? " Home address: " + p.user_home + "." : ""}${p.user_work ? " Work address: " + p.user_work + "." : ""}
 You can: search and read every file on the phone (images, PDFs, documents), organise folders, draft and send emails, and operate apps for the user through a phone agent (it taps and types inside the real apps and always asks the user before booking, paying, ordering or sending).
-Apps installed: ${apps}.
+Known apps installed: ${apps}.
+Every app on the phone (the agent can use any of them by name): ${all.join(", ").slice(0, 3000)}.
 Reply with ONE JSON object: {"say": "short, warm reply in plain text (light markdown ok)", "actions": [ ... ]}.
 Action types:
 - {"type":"search_files","query":"keywords from file names or contents","kind":"image|pdf|doc|video|audio|apk|archive|screenshots|downloads|whatsapp|camera|large|any","sort":"score|recent|size"} — list matching files.
@@ -358,9 +362,9 @@ Action types:
 - {"type":"organize","folder":"path relative to storage root, e.g. Download or DCIM/Camera","mode":"type|ai"} — "type" sorts into Images/PDFs/Documents…; "ai" groups by topic.
 - {"type":"duplicates"} — find duplicate files.
 - {"type":"email","to":"","cc":"","subject":"","body":"the complete email text, signed off with the user's name if known","attach_query":"optional keywords of files to attach","attach_kind":"pdf|image|any"}
-- {"type":"phone_task","app":"uber|ola|rapido|swiggy|instamart|zomato|blinkit|zepto|gmail|whatsapp|<other app name>","goal":"a complete, self-contained instruction for the agent with every detail the user gave: pickup/drop, ride type, dish/restaurant, every grocery item with quantity, delivery time, notes"}
+- {"type":"phone_task","app":"uber|ola|rapido|swiggy|instamart|zomato|blinkit|zepto|amazon|flipkart|myntra|meesho|ajio|nykaa|jiomart|bigbasket|bookmyshow|irctc|redbus|makemytrip|gmail|whatsapp|<any app name from the list>","goal":"a complete, self-contained instruction for the agent with every detail the user gave: pickup/drop, ride type, dish/restaurant, every item with quantity/size/colour/brand/budget, delivery time, notes"}
 - {"type":"open_app","app":"name"}
-Rules: Use several actions for several requests; errands run one after another in the given order. Don't invent addresses or recipients — if a cab request has no destination or an email has no recipient you can infer, ask in "say" and return no action for it (you may still draft the email with "to" empty). "home"/"office" are fine if the user says them (the app's saved places). Pick the app the user named; otherwise the best installed one (cabs: uber → ola → rapido; food: swiggy → zomato; groceries: instamart → blinkit → zepto). If files are attached to this message, answer about them directly in "say" with the details the user wants (amounts, dates, names, what the image shows) and return no actions unless asked. Keep "say" brief when actions do the work (e.g. "On it — opening Uber."). If it's just conversation, actions = [].`;
+Rules: Use several actions for several requests; errands run one after another in the given order. Don't invent addresses or recipients — if a cab request has no destination or an email has no recipient you can infer, ask in "say" and return no action for it (you may still draft the email with "to" empty). "home"/"office" are fine if the user says them (the app's saved places). Pick the app the user named; otherwise the best installed one (cabs: uber → ola → rapido; food: swiggy → zomato; groceries: instamart → blinkit → zepto; shopping: amazon → flipkart; fashion: myntra → ajio → meesho). For shopping, if the product is vague (no model, size or budget) ask one short question first unless the user said "any"/"cheapest"/"best rated". If files are attached to this message, answer about them directly in "say" with the details the user wants (amounts, dates, names, what the image shows) and return no actions unless asked. Keep "say" brief when actions do the work (e.g. "On it — opening Uber."). If it's just conversation, actions = [].`;
   const parts = [{ text }];
   for (const f of files) parts.push({ file: f, as: "auto", pages: 6 });
   const msgs = [...history(), { role: "user", parts }];
@@ -669,12 +673,14 @@ const TEMPL = {
   ride: { t: "Book a ride", ic: "car", c: "#5b8def", apps: ["uber", "ola", "rapido"], fields: [["from", "Pickup", "Current location"], ["to", "Drop", "e.g. Nashik Road station"], ["type", "Ride type (optional)", "Auto, Mini, Sedan…"]], goal: v => `Book a ${v.type || "ride (cheapest sensible option)"} from ${v.from || "my current location"} to ${v.to}.` },
   food: { t: "Order food", ic: "food", c: "#e5534b", apps: ["swiggy", "zomato"], fields: [["what", "What to order", "e.g. 2 paneer butter masala, 4 butter naan"], ["where", "From (optional)", "Restaurant name"], ["note", "Notes (optional)", "less spicy, deliver at 8 pm"]], goal: v => `Order ${v.what}${v.where ? " from " + v.where : " from a well-rated restaurant nearby"} to my default address.${v.note ? " Notes: " + v.note + "." : ""}` },
   grocery: { t: "Groceries", ic: "cart", c: "#3b9c7a", apps: ["instamart", "blinkit", "zepto"], fields: [["list", "Shopping list (one per line)", "1 L Amul milk\n6 eggs\n1 kg onions", true]], goal: v => `Add these groceries to the cart and check out to my default address:\n${v.list}` },
+  shop: { t: "Shop online", ic: "bag", c: "#e07b39", apps: ["amazon", "flipkart", "myntra", "meesho", "ajio", "nykaa", "jiomart"], fields: [["item", "What to buy", "e.g. boAt Airdopes 141, black"], ["qty", "Quantity / size (optional)", "1, size M…"], ["budget", "Budget (optional)", "under ₹1,500"]], goal: v => `Buy ${v.qty ? v.qty + " × " : ""}${v.item}${v.budget ? ", budget " + v.budget : ""}. Pick a well-rated listing that matches, add it to the cart and check out to my default address with my default payment.` },
+  more: { t: "Any app", ic: "bolt", c: "#2b9bb0", apps: [], fields: [["app", "App name", "e.g. BookMyShow, IRCTC, Paytm"], ["goal", "What should Atlas do there?", "e.g. book 2 tickets for the 7 pm show of …", true]], goal: v => v.goal },
   mail: { t: "Write an email", ic: "mail", c: "#a35bd6", apps: [], fields: [["to", "To", "name@example.com"], ["about", "What it's about", "e.g. ask for leave on Monday, polite", true]], goal: null },
 };
 function viewTasks() {
   let h = `<div class="top"><div class="grow"><h1>Tasks</h1><div class="sub">${N.agentOn() ? "Agent is on" : "Agent is off"}${N.agentBusy() ? " · working now" : ""}</div></div>${N.agentBusy() ? `<button class="btn danger sm" data-a="stopAgent">${ic("stop", "s")} Stop</button>` : ""}</div>`;
   if (!N.agentOn()) h += `<div class="card">${setupCard("agent").html}</div>`;
-  h += `<div class="suggest">${Object.entries(TEMPL).map(([k, t]) => `<button class="sg" data-a="templ" data-k="${k}" style="--c:${t.c}"><span class="ic">${ic(t.ic)}</span><b>${t.t}</b><span>${t.apps.length ? t.apps.map(appName).join(" · ") : "Gmail"}</span></button>`).join("")}</div>`;
+  h += `<div class="suggest">${Object.entries(TEMPL).map(([k, t]) => `<button class="sg" data-a="templ" data-k="${k}" style="--c:${t.c}"><span class="ic">${ic(t.ic)}</span><b>${t.t}</b><span>${t.apps.length ? t.apps.slice(0, 3).map(appName).join(" · ") + (t.apps.length > 3 ? "…" : "") : k === "more" ? "Any installed app" : "Gmail"}</span></button>`).join("")}</div>`;
   h += `<div class="card"><div class="row nowrap"><span class="spark" style="width:38px;height:38px;border-radius:13px">${ic("shield", "s")}</span><div class="grow t2">The agent stops and shows <b>Confirm / Cancel</b> on top of the app before anything is booked, ordered, paid or sent. It never types passwords, OTPs or UPI PINs — it asks you to.</div></div></div>`;
   h += `<h2>Activity</h2><div class="card tight" id="log">${logHtml()}</div>`;
   return h;
@@ -697,6 +703,8 @@ function templSheet(k, preset) {
     if (k === "ride" && !v.to) { toast("Where to?"); return; }
     if (k === "food" && !v.what) { toast("What should I order?"); return; }
     if (k === "grocery" && !v.list) { toast("Add a few items"); return; }
+    if (k === "shop" && !v.item) { toast("What should I buy?"); return; }
+    if (k === "more") { if (!v.app || !v.goal) { toast("Add the app and what to do"); return; } app = v.app; }
     closeSheet(); go("assistant");
     if (k === "mail") { send(`Draft an email to ${v.to || "(ask me)"}: ${v.about}`); return; }
     const goal = t.goal(v);
@@ -717,7 +725,7 @@ function viewSettings() {
     <label class="f">Gemini model</label><input id="gm" data-pref="gemini_model" value="${esc(p.gemini_model || "gemini-3.6-flash")}">
     <label class="f">Claude API key ${prov === "claude" ? "· in use" : ""}</label><input type="password" id="ck" data-pref="claude_key" value="${esc(p.claude_key || "")}" placeholder="From console.anthropic.com → API keys" autocomplete="off">
     <label class="f">Claude model</label><input id="cm" data-pref="claude_model" value="${esc(p.claude_model || "claude-sonnet-5-5")}">
-    <div class="row end" style="margin-top:12px"><span class="grow t2" id="testres"></span><button class="btn tonal sm" data-a="testKey">Test</button></div>
+    <div class="row end" style="margin-top:12px"><span class="grow t2" id="testres"></span><button class="btn ghost sm" data-a="keyHelp">How to get a key</button><button class="btn tonal sm" data-a="testKey">Test</button></div>
   </div>
   <h2>Permissions</h2><div class="card tight">
     ${perm(N.hasFiles(), "All files access", "Search, describe and organise files", "askFiles", "Allow")}
@@ -844,6 +852,7 @@ document.addEventListener("click", async e => {
     case "templ": templSheet(el.dataset.k); break;
     // settings
     case "prov": setPref("provider", el.dataset.k); render(); break;
+    case "keyHelp": openSheet(`<h3>Get a free Gemini key</h3><div style="margin:10px 0">${md("1. Open **aistudio.google.com** and sign in with your Google account.\n2. Tap **Get API key** → **Create API key** (pick or create a project if asked).\n3. Copy the key (it starts with **AIza…**).\n4. Come back here, choose **Google Gemini**, paste it in **Gemini API key**, then tap **Test**.\n\nThe free tier has per-minute limits — if errands pause with “rate limit”, wait a minute. Keep the key private.")}</div><div class="row end"><a class="btn primary" href="https://aistudio.google.com/app/apikey">Open AI Studio</a></div>`); break;
     case "testKey": {
       const out = $("#testres"); saveInputs(); out.textContent = "Testing…";
       try { const r = await ai({ maxTokens: 50, messages: [{ role: "user", parts: [{ text: "Reply with just: OK" }] }] }); out.textContent = "✓ Works (" + (PREF().provider || "gemini") + ")"; out.style.color = "var(--ok)"; }
@@ -928,7 +937,7 @@ function mockNative() {
     .map(([p, k, s], i) => ({ p: "/storage/emulated/0/" + p, n: p.split("/").pop(), d: p.split("/").slice(0, -1).join("/"), k, s, m: now - i * 86400000 * 3, x: p.split(".").pop() }));
   return {
     prefs: () => JSON.stringify(P), setPref: (k, v) => P[k] = v, setBool: (k, v) => P[k] = v, setInt: (k, v) => P[k] = v, version: () => "preview",
-    hasFiles: () => true, askFiles() { }, agentOn: () => false, openAccessibility() { }, openAppInfo() { }, apps: () => JSON.stringify([{ key: "uber", label: "Uber" }, { key: "swiggy", label: "Swiggy" }]),
+    hasFiles: () => true, askFiles() { }, agentOn: () => false, openAccessibility() { }, openAppInfo() { }, apps: () => JSON.stringify([{ key: "uber", label: "Uber" }, { key: "swiggy", label: "Swiggy" }]), allApps: () => '["Amazon","Flipkart","Uber"]',
     setBars() { }, setCanGoBack() { }, haptic() { }, dynamicColors: () => null, voice(id) { atlasCb(id, false, "no voice"); },
     scan(id) { setTimeout(() => atlasCb(id, true, "ok"), 300); }, stats: () => JSON.stringify({ files: files.length, bytes: 1e9, kinds: { image: { n: 3, b: 4e6 }, pdf: { n: 2, b: 3e5 }, video: { n: 1, b: 9e8 }, apk: { n: 1, b: 2.2e7 }, doc: { n: 1, b: 9e4 } }, free: 180e9, cap: 512e9, analyzed: 0 }),
     search: (q, k) => { const it = files.filter(f => (!q || f.n.toLowerCase().includes(q.toLowerCase())) && (k === "any" || k === f.k || k === "todo" && (f.k === "image" || f.k === "pdf"))); return JSON.stringify({ total: it.length, bytes: it.reduce((a, b) => a + b.s, 0), items: it }); },

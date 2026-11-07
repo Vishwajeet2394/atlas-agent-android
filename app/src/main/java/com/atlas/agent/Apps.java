@@ -32,6 +32,29 @@ final class Apps {
         KNOWN.put("maps", new String[]{"com.google.android.apps.maps"});
         KNOWN.put("amazon", new String[]{"in.amazon.mShop.android.shopping"});
         KNOWN.put("flipkart", new String[]{"com.flipkart.android"});
+        KNOWN.put("myntra", new String[]{"com.myntra.android"});
+        KNOWN.put("meesho", new String[]{"com.meesho.supply"});
+        KNOWN.put("ajio", new String[]{"com.ril.ajio"});
+        KNOWN.put("nykaa", new String[]{"com.fsn.nykaa"});
+        KNOWN.put("bigbasket", new String[]{"com.bigbasket.mobileapp"});
+        KNOWN.put("jiomart", new String[]{"com.jpl.jiomart"});
+        KNOWN.put("tata neu", new String[]{"com.tatadigital.tcp"});
+        KNOWN.put("croma", new String[]{"com.croma.app"});
+        KNOWN.put("dmart", new String[]{"in.dmart"});
+        KNOWN.put("dominos", new String[]{"com.Dominos"});
+        KNOWN.put("mcdonalds", new String[]{"com.mcdonalds.mobileapp"});
+        KNOWN.put("indrive", new String[]{"sinet.startup.inDriver"});
+        KNOWN.put("namma yatri", new String[]{"in.juspay.nammayatri"});
+        KNOWN.put("bookmyshow", new String[]{"com.bt.bms"});
+        KNOWN.put("makemytrip", new String[]{"com.makemytrip"});
+        KNOWN.put("irctc", new String[]{"cris.org.in.prs.ima"});
+        KNOWN.put("redbus", new String[]{"in.redbus.android"});
+        KNOWN.put("goibibo", new String[]{"com.goibibo"});
+        KNOWN.put("paytm", new String[]{"net.one97.paytm"});
+        KNOWN.put("telegram", new String[]{"org.telegram.messenger"});
+        KNOWN.put("instagram", new String[]{"com.instagram.android"});
+        KNOWN.put("youtube", new String[]{"com.google.android.youtube"});
+        KNOWN.put("spotify", new String[]{"com.spotify.music"});
         KNOWN.put("bhim", new String[]{"in.org.npci.upiapp"});
         KNOWN.put("phonepe", new String[]{"com.phonepe.app"});
         KNOWN.put("gpay", new String[]{"com.google.android.apps.nbu.paisa.user"});
@@ -78,6 +101,20 @@ final class Apps {
         if (i == null) return false;
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
         try { c.startActivity(i); return true; } catch (Exception e) { return false; }
+    }
+
+    /** Names of every app with a launcher icon (so the AI can pick any of them). */
+    static String allLabels(Context c) {
+        PackageManager pm = c.getPackageManager();
+        Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        JSONArray out = new JSONArray();
+        java.util.TreeSet<String> seen = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (ResolveInfo r : pm.queryIntentActivities(i, 0)) {
+            if (c.getPackageName().equals(r.activityInfo.packageName)) continue;
+            seen.add(String.valueOf(r.loadLabel(pm)));
+        }
+        for (String l : seen) out.put(l);
+        return out.toString();
     }
 
     /** Which of the known apps are on this phone. */
