@@ -61,11 +61,13 @@ jobs:
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           script: bash .github/smoke/smoke.sh
-      - uses: actions/upload-artifact@v4
+      - name: Publish screenshots to the smoke-results branch
         if: always()
-        with:
-          name: smoke
-          path: smoke-out
+        run: |
+          [ -d smoke-out ] || exit 0
+          cd smoke-out && rm -f logcat.txt && git init -q -b smoke-results && git add -A
+          git -c user.name=ci -c user.email=ci@local commit -qm "smoke ${{ github.run_number }}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" smoke-results
 
   release:
     needs: smoke

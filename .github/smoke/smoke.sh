@@ -25,11 +25,13 @@ adb shell am start -n $P/.MainActivity --es go tasks; sleep 4; shot 5-tasks-log
 adb logcat -d > $OUT/logcat.txt
 adb logcat -d -s AtlasAgent:I > $OUT/agent.txt
 grep -E "chromium.*(Uncaught|CONSOLE.*Error)" $OUT/logcat.txt > $OUT/js-errors.txt
-grep -A25 "FATAL EXCEPTION" $OUT/logcat.txt > $OUT/crashes.txt
+grep -A3 "FATAL EXCEPTION" $OUT/logcat.txt | grep -B1 -A2 "Process: $P" > $OUT/crashes.txt
 grep -E "ANR in $P" $OUT/logcat.txt >> $OUT/crashes.txt
 echo "--- agent log"; cat $OUT/agent.txt
 echo "--- js errors"; cat $OUT/js-errors.txt
 echo "--- crashes"; cat $OUT/crashes.txt
+echo "--- atlas process lifecycle"; grep -E "($P).*(Start proc|Killing|died|Process .* has died)|ActivityManager.*$P" $OUT/logcat.txt | head -30
+echo "--- atlas warnings"; grep -E " (W|E) .*(Atlas|atlas)" $OUT/logcat.txt | grep -v AtlasAgent | head -40
 fail=0
 grep -q "Self-test passed" $OUT/agent.txt || { echo "::error::agent self-test did not pass"; fail=1; }
 [ -s $OUT/js-errors.txt ] && { echo "::error::JavaScript errors in the app"; fail=1; }
