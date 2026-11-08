@@ -92,12 +92,46 @@ final class Ai {
     }
 
     // ---------- Gemini ----------
+    /** Tried in order when a model's free daily allowance runs out (each model has its own). */
+    static final String[] GEMINI_CHAIN = {"gemini-3.8-flash", "gemini-3.7-flash", "gemini-flash-latest", "gemini-3-flash-preview",
+            "gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-flash-lite-latest"};
+    static final String GEMINI_DEFAULT = "gemini-3.8-flash";
+
+    private static String today() { return new java.text.SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new java.util.Date(System.currentTimeMillis() - 8L * 3600_000)); } // quotas reset at Pacific midnight
+
     private static String gemini(Context c, JSONObject req, JSONArray msgs) throws Exception {
         SharedPreferences p = prefs(c);
         String key = p.getString("gemini_key", "").trim();
         if (key.isEmpty()) throw new Exception("Add your Gemini API key in Settings first.");
-        String model = p.getString("gemini_model", "gemini-3.6-flash").trim();
-        if (model.isEmpty()) model = "gemini-3.6-flash";
+        String first = p.getString("gemini_model", GEMINI_DEFAULT).trim();
+        if (first.isEmpty()) first = GEMINI_DEFAULT;
+        java.util.LinkedHashSet<String> order = new java.util.LinkedHashSet<>();
+        order.add(first);
+        if (p.getBoolean("gemini_fallback", true)) java.util.Collections.addAll(order, GEMINI_CHAIN);
+        Exception last = null;
+        for (String model : order) {
+            String out = p.getString("quota_out:" + model, "");
+            if (out.equals(today()) || out.equals("gone")) continue;
+            try {
+                String r = geminiOnce(c, req, msgs, key, model);
+                p.edit().putString("gemini_last_model", model).apply();
+                return r;
+            } catch (Exception e) {
+                String m = String.valueOf(e.getMessage()).toLowerCase(Locale.ROOT);
+                last = e;
+                if (m.contains("no longer available") || m.contains("is not found") || m.contains("not supported for generatecontent")) { p.edit().putString("quota_out:" + model, "gone").apply(); continue; }
+                boolean perMin = m.contains("per minute") || m.contains("perminute") || m.contains("high demand") || m.contains("overloaded") || m.contains("unavailable");
+                if (perMin) continue; // busy right now — try the next model, keep this one for later
+                if (m.contains("per day") || m.contains("perday") || m.contains("quota")) { p.edit().putString("quota_out:" + model, today()).apply(); continue; }
+                throw e;
+            }
+        }
+        if (last != null) throw new Exception("All Gemini models have used today's free limit. It resets at 1:30 PM IST — or switch to Claude, or enable billing on the key. (" + last.getMessage() + ")");
+        throw new Exception("No Gemini model available — check the model name in Settings.");
+    }
+
+    private static String geminiOnce(Context c, JSONObject req, JSONArray msgs, String key, String model) throws Exception {
+        SharedPreferences p = prefs(c);
         JSONObject body = new JSONObject();
         if (req.has("system")) body.put("systemInstruction", new JSONObject().put("parts", new JSONArray().put(new JSONObject().put("text", req.getString("system")))));
         JSONArray contents = new JSONArray();
@@ -117,8 +151,7 @@ final class Ai {
         if (req.optBoolean("json")) gc.put("responseMimeType", "application/json");
         String level = req.optBoolean("deep") ? null : req.optString("think", "low");
         boolean thinkOk = p.getBoolean("gemini_thinking_ok:" + model, true);
-        if (level != null && thinkOk && model.startsWith("gemini-3")) gc.put("thinkingConfig", new JSONObject().put("thinkingLevel", level));
-        else if (level != null && thinkOk && model.contains("2.5-flash")) gc.put("thinkingConfig", new JSONObject().put("thinkingBudget", "low".equals(level) ? 0 : 2048));
+        if (level != null && thinkOk && (model.startsWith("gemini-3") || model.contains("latest"))) gc.put("thinkingConfig", new JSONObject().put("thinkingLevel", level));
         body.put("generationConfig", gc);
         String url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
         JSONObject r;
@@ -223,7 +256,7 @@ final class Ai {
             JSONObject err = j.optJSONObject("error");
             String msg = err != null ? err.optString("message", err.toString()) : text;
             if (code == 401 || code == 403 || msg.toLowerCase(Locale.ROOT).contains("api key")) msg = "The API key was rejected — check it in Settings. (" + msg + ")";
-            if (code == 429) msg = "Rate limit reached — wait a minute and try again. (" + msg + ")";
+            if (code == 429) msg = "Rate limit reached — wait a minute and try again. (" + msg + " " + detail429(j) + ")";
             throw new Exception(msg);
         }
         return j;
@@ -253,6 +286,18 @@ final class Ai {
             }
         }
         return "{\"thought\":\"not visible, scrolling\",\"action\":\"scroll\",\"direction\":\"down\"}";
+    }
+
+    private static String detail429(JSONObject j) {
+        try {
+            JSONArray d = j.getJSONObject("error").optJSONArray("details");
+            StringBuilder sb = new StringBuilder();
+            if (d != null) for (int i = 0; i < d.length(); i++) {
+                JSONArray v = d.getJSONObject(i).optJSONArray("violations");
+                if (v != null) for (int k = 0; k < v.length(); k++) sb.append(v.getJSONObject(k).optString("quotaId")).append(' ');
+            }
+            return sb.toString();
+        } catch (Exception e) { return ""; }
     }
 
     /** Pulls the first JSON object out of a model reply (tolerates code fences and chatter). */

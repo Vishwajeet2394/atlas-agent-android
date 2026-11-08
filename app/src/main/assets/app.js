@@ -885,7 +885,8 @@ function viewSettings() {
   <h2>AI provider</h2><div class="card">
     <div class="seg"><button data-a="prov" data-k="gemini" aria-pressed="${prov === "gemini"}">Google Gemini</button><button data-a="prov" data-k="claude" aria-pressed="${prov === "claude"}">Claude</button></div>
     <label class="f">Gemini API key ${prov === "gemini" ? "· in use" : ""}</label><input type="password" id="gk" data-pref="gemini_key" value="${esc(p.gemini_key || "")}" placeholder="From aistudio.google.com → Get API key" autocomplete="off">
-    <label class="f">Gemini model</label><input id="gm" data-pref="gemini_model" value="${esc(p.gemini_model || "gemini-3.6-flash")}">
+    <label class="f">Gemini model</label><input id="gm" data-pref="gemini_model" value="${esc(p.gemini_model || "gemini-3.8-flash")}">
+    <div class="li" style="padding:8px 2px"><div class="grow"><div class="tt">Switch models when the free limit runs out</div><div class="t2" style="white-space:normal">Each Gemini model has its own daily free allowance — Atlas moves to the next one (3.8 Flash → 3.7 Flash → Flash-Lite…) instead of stopping.${p.gemini_last_model ? " Last used: " + esc(p.gemini_last_model) + "." : ""}</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="gemini_fallback" ${p.gemini_fallback !== false ? "checked" : ""}><span></span></label></div>
     <label class="f">Claude API key ${prov === "claude" ? "· in use" : ""}</label><input type="password" id="ck" data-pref="claude_key" value="${esc(p.claude_key || "")}" placeholder="From console.anthropic.com → API keys" autocomplete="off">
     <label class="f">Claude model</label><input id="cm" data-pref="claude_model" value="${esc(p.claude_model || "claude-sonnet-5-5")}">
     <div class="row end" style="margin-top:12px"><span class="grow t2" id="testres"></span><button class="btn ghost sm" data-a="keyHelp">How to get a key</button><button class="btn tonal sm" data-a="testKey">Test</button></div>
