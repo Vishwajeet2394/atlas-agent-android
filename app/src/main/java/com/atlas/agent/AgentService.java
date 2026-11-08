@@ -241,12 +241,12 @@ public class AgentService extends AccessibilityService {
             }
             if (sc.text.equals(lastSig)) same++; else { same = 0; lastSig = sc.text; }
             // screenshots cost time: send one when the element list is thin, the screen is new to us, or we're stuck
-            boolean shot = useShot && (shopping || wantShot || lastFailed || same >= 1 || sc.labeled < 12 || step == 1);
+            boolean shot = useShot && ((shopping && Ai.prefs(this).getBoolean("careful", true)) || wantShot || lastFailed || same >= 1 || sc.labeled < 12 || step == 1);
             if (shot) sc.shot = screenshot();
             wantShot = false; lastFailed = false;
             status(label + " · step " + step, "Looking at " + label(sc.pkg) + "…");
             JSONObject req = new JSONObject().put("system", SYSTEM).put("json", true).put("maxTokens", 1200);
-            if (shopping && Ai.prefs(this).getBoolean("careful", true)) req.put("think", "medium");
+
             StringBuilder u = new StringBuilder();
             u.append("GOAL: ").append(goal).append('\n');
             if (!answers.isEmpty()) u.append("USER ANSWERS: ").append(String.join(" | ", answers)).append('\n');

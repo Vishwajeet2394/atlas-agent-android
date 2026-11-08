@@ -238,6 +238,22 @@ final class Ai {
     // ---------- HTTP ----------
     private static JSONObject post(String url, String body, String[][] headers) throws Exception {
         HttpURLConnection h = (HttpURLConnection) new URL(url).openConnection();
+        // hard deadline for the whole call: servers can keep a slow reply alive with whitespace, so a read timeout alone never fires
+        Integer rt = READ_TIMEOUT.get();
+        long deadline = rt == null ? 150_000 : Math.max(20_000, rt - 10_000);
+        final boolean[] killed = {false};
+        java.util.concurrent.ScheduledFuture<?> watchdog = WATCHDOG.schedule(() -> { killed[0] = true; try { h.disconnect(); } catch (Exception ignored) { } }, deadline, java.util.concurrent.TimeUnit.MILLISECONDS);
+        try {
+            return postWith(h, body, headers);
+        } catch (Exception e) {
+            if (killed[0]) throw new java.net.SocketTimeoutException("timed out after " + (deadline / 1000) + " s");
+            throw e;
+        } finally { watchdog.cancel(false); }
+    }
+
+    private static final java.util.concurrent.ScheduledExecutorService WATCHDOG = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> { Thread t = new Thread(r, "atlas-ai-watchdog"); t.setDaemon(true); return t; });
+
+    private static JSONObject postWith(HttpURLConnection h, String body, String[][] headers) throws Exception {
         h.setRequestMethod("POST");
         h.setConnectTimeout(20000);
         h.setReadTimeout(READ_TIMEOUT.get() == null ? 120000 : READ_TIMEOUT.get());
