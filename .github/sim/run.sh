@@ -31,7 +31,10 @@ run() {
   N=$((N+1))
   if [ -n "$ONLY" ] && ! echo ",$ONLY," | grep -q ",$name,"; then return; fi
   echo "::group::[$N] $name — $chat"
-  adb shell am force-stop $A; adb shell settings put secure enabled_accessibility_services $A/$A.AgentService; sleep 3
+  adb logcat -c; adb shell am force-stop $A
+  adb shell settings delete secure enabled_accessibility_services >/dev/null; sleep 1
+  adb shell settings put secure enabled_accessibility_services $A/$A.AgentService
+  for i in $(seq 1 20); do adb logcat -d -s AtlasAgent:I | grep -q "ready:" && break; sleep 1; done
   for p in $PKGS; do adb shell am force-stop $p; adb shell pm clear $p >/dev/null 2>&1; done
   IFS=';' read -ra CS <<< "$cfgs"
   for c in "${CS[@]}"; do [ -z "$c" ] && continue; adb shell am start -n "${c%%=*}/com.atlas.sim.SimActivity" --es sim_config "x${c#*=}" >/dev/null; sleep 1; done
