@@ -75,6 +75,9 @@ public class AgentService extends AccessibilityService {
     static final Pattern SECRET_SCREEN = Pattern.compile(
             "(upi\\s*pin|enter\\s*(your\\s*)?(4|6)[- ]digit|\\bm-?pin\\b|\\bpasscode\\b|\\botp\\b|one[- ]time\\s*password|verification\\s*code|enter\\s*(your\\s*)?password|\\bcvv\\b|card\\s*number|net\\s*banking\\s*password)", Pattern.CASE_INSENSITIVE);
 
+    /** Screens that mean the booking/order went through — finish, don't wait around. */
+    static final Pattern PLACED = Pattern.compile("(looking for (nearby )?drivers?|finding (you )?a (ride|driver|captain)|searching for (a )?(driver|captain|ride)|order (placed|confirmed|received)|placed successfully|booking (confirmed|successful)|ride (booked|confirmed)|payment successful|recharge successful|thank you for your order|order is being prepared|arriving in|on its way)", Pattern.CASE_INSENSITIVE);
+
     static final Pattern WEAK_FINAL = Pattern.compile("^(confirm|book|continue)$", Pattern.CASE_INSENSITIVE);
     /** A button that commits money/messages. A bare "Confirm" only counts when a price is on screen. */
     static boolean isFinal(String label, Screen sc) {
@@ -202,7 +205,7 @@ public class AgentService extends AccessibilityService {
         List<String> answers = new ArrayList<>();
         int maxSteps = Ai.prefs(this).getInt("max_steps", 70);
         boolean useShot = Ai.prefs(this).getBoolean("screenshots", true);
-        String lastSig = ""; int same = 0, badJson = 0, unreadable = 0; boolean askedSecret = false, finishNudged = false;
+        String lastSig = ""; int same = 0, badJson = 0, unreadable = 0; boolean askedSecret = false, finishNudged = false, leftNudged = false, committed = false;
         boolean mustFinish = !t.optBoolean("prepare_only") && Pattern.compile("(order|book|buy|pay|recharge|send|purchase|checkout)", Pattern.CASE_INSENSITIVE).matcher(goal).find();
         boolean wantShot = true, lastFailed = false;
         int approvedUntil = -1;
@@ -226,6 +229,16 @@ public class AgentService extends AccessibilityService {
             }
             unreadable = 0;
             boolean secret = SECRET_SCREEN.matcher(sc.text).find();
+            if (committed && PLACED.matcher(sc.text).find()) {
+                java.util.regex.Matcher pm = PLACED.matcher(sc.text); pm.find();
+                String sum = "Done — " + pm.group(1) + (notes.isEmpty() ? "" : " · " + notes);
+                trace("   auto-done after confirmed step: " + pm.group(1));
+                event("done", sum, new JSONObject().put("task", idx));
+                status(label, "✓ " + sum);
+                vibrate(40);
+                sleep(1500);
+                return "done";
+            }
             if (sc.text.equals(lastSig)) same++; else { same = 0; lastSig = sc.text; }
             // screenshots cost time: send one when the element list is thin, the screen is new to us, or we're stuck
             boolean shot = useShot && (shopping || wantShot || lastFailed || same >= 1 || sc.labeled < 12 || step == 1);
@@ -261,7 +274,7 @@ public class AgentService extends AccessibilityService {
                     trace("   ai FAILED after " + (SystemClock.uptimeMillis() - tc) + " ms: " + m);
                     android.util.Log.i("AtlasAgent", "ai-error: " + m);
                     boolean rate = m.toLowerCase(Locale.ROOT).contains("rate") || m.contains("429") || m.toLowerCase(Locale.ROOT).contains("overloaded") || m.contains("503");
-                    if (m.contains("API key") || m.contains("Settings first") || attempt == 3) { event("fail", "Couldn't reach the AI: " + m, new JSONObject().put("task", idx)); return "fail"; }
+                    if (m.contains("API key") || m.contains("Settings first") || m.contains("today's free limit") || attempt == 3) { event("fail", "Couldn't reach the AI: " + m, new JSONObject().put("task", idx)); return "fail"; }
                     int wait = rate ? new int[]{8, 20, 40}[attempt] : 3;
                     status(label, (rate ? "AI is busy — waiting " : "Network hiccup — retrying in ") + wait + " s…");
                     sleep(wait * 1000L);
@@ -310,7 +323,12 @@ public class AgentService extends AccessibilityService {
                         status(label + " · step " + step, "Tapping " + q(n.label));
                         boolean ok = tap(n);
                         history.add((ok ? "tapped (approved)" : "tap FAILED on") + " [" + id + "] " + q(n.label));
-                        lastFailed = !ok;
+                        lastFailed = !ok; committed |= ok;
+                        break;
+                    }
+                    if (sensitive && itemsLeft(notes) && !leftNudged) {
+                        leftNudged = true;
+                        history.add("NOT YET: your notes still list items left (" + notes + "). Add every item from the GOAL first, then go to the final step.");
                         break;
                     }
                     if (sensitive) {
@@ -319,6 +337,7 @@ public class AgentService extends AccessibilityService {
                         history.add("user CONFIRMED and tapped [" + id + "] " + q(n.label));
                         allow = "send".equals(allow) ? "" : allow;
                         approvedUntil = step + 4;
+                        committed = true;
                         break;
                     }
                     status(label + " · step " + step, short_(thought, "Tapping " + q(n.label)));
@@ -361,8 +380,15 @@ public class AgentService extends AccessibilityService {
                     lastFailed = !ok;
                     break;
                 }
-                case "back": performGlobalAction(GLOBAL_ACTION_BACK); history.add("pressed Back"); break;
-                case "home": performGlobalAction(GLOBAL_ACTION_HOME); history.add("pressed Home"); break;
+                case "back":
+                    if (committed) { // backing out of a placed ride/order can cancel it
+                        event("done", "Done — your order/booking is placed. Atlas stopped here so nothing gets cancelled.", new JSONObject().put("task", idx));
+                        return "done";
+                    }
+                    performGlobalAction(GLOBAL_ACTION_BACK); history.add("pressed Back"); break;
+                case "home":
+                    if (committed) { event("done", "Done — your order/booking is placed.", new JSONObject().put("task", idx)); return "done"; }
+                    performGlobalAction(GLOBAL_ACTION_HOME); history.add("pressed Home"); break;
                 case "wait": status(label + " · step " + step, short_(thought, "Waiting for the app…")); sleep(1800); history.add("waited"); break;
                 case "look": wantShot = true; history.add("asked for a screenshot"); break;
                 case "open_app": {
@@ -381,20 +407,31 @@ public class AgentService extends AccessibilityService {
                     break;
                 }
                 case "confirm": {
+                    if (itemsLeft(notes) && !leftNudged) { // its own notes say the list isn't finished
+                        leftNudged = true;
+                        history.add("NOT YET: your notes still list items left (" + notes + "). Add every item from the GOAL to the cart first, check the cart, then confirm.");
+                        break;
+                    }
                     if (step <= approvedUntil && n != null) { // already approved a moment ago — just press it
                         boolean ok = tap(n);
                         history.add((ok ? "tapped (approved)" : "tap FAILED on") + " [" + id + "] " + q(n.label));
-                        lastFailed = !ok;
+                        lastFailed = !ok; committed |= ok;
                         break;
                     }
                     String r = confirm(label, a.optString("summary", "Ready for the final step."), n, sc);
                     if (!"ok".equals(r)) return r;
                     approvedUntil = step + 4; // one OK covers the next payment screen too
+                    if (n != null) committed = true;
                     history.add(n != null ? "user CONFIRMED and tapped [" + id + "] " + q(n.label) : "user CONFIRMED — now tap the final button");
                     break;
                 }
                 case "done": {
                     String sum = a.optString("summary", "Done.");
+                    if (itemsLeft(notes) && !leftNudged && !secret) {
+                        leftNudged = true;
+                        history.add("NOT DONE: your notes still list items left (" + notes + "). Finish them first.");
+                        break;
+                    }
                     if (mustFinish && approvedUntil < 0 && !secret && !finishNudged) {
                         // stopped right before paying/booking: the confirm *is* the stop — go back and ask the user
                         finishNudged = true;
@@ -535,6 +572,15 @@ public class AgentService extends AccessibilityService {
             if (best != null) return best;
         } catch (Exception ignored) { }
         return active;
+    }
+
+    /** "added: milk | left: bread, eggs" → true while something is left. */
+    static boolean itemsLeft(String notes) {
+        if (notes == null) return false;
+        java.util.regex.Matcher m = Pattern.compile("left\\s*:\\s*([^|\\n]*)", Pattern.CASE_INSENSITIVE).matcher(notes);
+        if (!m.find()) return false;
+        String rest = m.group(1).trim().toLowerCase(Locale.ROOT).replaceAll("[.\\s]+$", "");
+        return !(rest.isEmpty() || rest.equals("none") || rest.equals("nothing") || rest.equals("-") || rest.startsWith("none") || rest.equals("0") || rest.equals("n/a"));
     }
 
     private boolean screenUsable() {
@@ -1046,6 +1092,7 @@ public class AgentService extends AccessibilityService {
             + "After adding items, the cart is reached via a bottom bar like 'View Cart', 'Next', or 'items added'. Before the final step check the cart matches the request (items and quantities; use + / − to fix). "
             + "If an item is out of stock or unavailable, pick the closest equivalent only if it is obviously the same thing (same product, different pack is fine); otherwise ask_user. Keep notes of what is done and what is left on multi-item orders. "
             + "For food: search the restaurant or dish, prefer well-rated, open, nearby places; add items, customise with defaults, open the cart, review, then confirm before placing the order. "
+            + "On multi-item orders ALWAYS keep notes in the form 'added: … | left: …' and update them after each item. "
             + "For groceries (Instamart/Blinkit/Zepto): add every item on the list one by one (search each, pick a popular pack of a normal size), then open the cart, check all items are there, then confirm before paying. "
             + "For shopping (Amazon, Flipkart, Myntra, Meesho, Ajio, Nykaa, JioMart, BigBasket, Croma…): search the product, open a well-rated listing that matches the request (brand, size, colour, budget), pick the variant, Add to cart (or Buy now), go to the cart/checkout, keep the default address and payment, then confirm before the final Place order / Pay button. Never apply for EMI, credit or Pay Later, and skip add-ons like protection plans unless asked. "
             + "For tickets (BookMyShow, IRCTC, redBus, MakeMyTrip): find the show/train/bus, ask_user to choose when there are several sensible options, fill passenger details from saved profiles only, then confirm before paying. "
@@ -1055,6 +1102,7 @@ public class AgentService extends AccessibilityService {
             + "For messages in WhatsApp/Telegram: the chat may already be open with the text typed; check the contact name, then confirm on Send. "
             + "For email in Gmail: the compose screen may already be filled; check To/Subject/Body and use confirm on Send. "
             + "SPEED: use then whenever the next steps are predictable, e.g. type 'biryani' then tap the suggestion labelled 'Biryani'; tap a tab then tap a known button. Atlas finds each follow-up by its label on the fresh screen and stops if it isn't there; it never runs a final payment/send step as a follow-up. "
+            + "After the final step is confirmed and tapped, use done as soon as the app shows it is placed/booked/searching for a driver — never wait for drivers or delivery, and never press back or cancel afterwards. "
             + "Never use done just before the final button: the way to 'stop before paying' is confirm on that button — the user approves, then you finish. Use done only once it is placed/booked/sent (or the GOAL explicitly says not to complete it). "
             + "Use tap_xy only for things that have no element in the list (maps, drawn buttons, popups without labels); prefer ids. Don't use look when a screenshot is already attached. "
             + "Once the user has confirmed, finish the payment screen yourself: keep the method that is already selected (or the first UPI/default option) — never ask which payment method to use unless the GOAL says to. "

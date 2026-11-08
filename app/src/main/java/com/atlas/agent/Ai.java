@@ -112,9 +112,11 @@ final class Ai {
         order.add(first);
         if (p.getBoolean("gemini_fallback", true)) java.util.Collections.addAll(order, GEMINI_CHAIN);
         Exception last = null;
+        int exhausted = 0;
         for (String model : order) {
             String out = p.getString("quota_out:" + model, "");
-            if (out.equals(today()) || out.equals("gone")) continue;
+            if (out.equals(today())) { exhausted++; continue; }
+            if (out.equals("gone")) continue;
             try {
                 String r = geminiOnce(c, req, msgs, key, model);
                 p.edit().putString("gemini_last_model", model).apply();
@@ -130,7 +132,7 @@ final class Ai {
                 throw e;
             }
         }
-        if (last != null) throw new Exception("All Gemini models have used today's free limit. It resets at 1:30 PM IST — or switch to Claude, or enable billing on the key. (" + last.getMessage() + ")");
+        if (last != null || exhausted > 0) throw new Exception("All Gemini models have used today's free limit. It resets at 1:30 PM IST — or switch to Claude, or enable billing on the key." + (last != null ? " (" + last.getMessage() + ")" : ""));
         throw new Exception("No Gemini model available — check the model name in Settings.");
     }
 
