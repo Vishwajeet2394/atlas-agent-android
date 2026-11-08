@@ -71,6 +71,10 @@ public class AgentService extends AccessibilityService {
     private volatile CountDownLatch waitReply;
 
     // anything that commits money or messages
+    /** Screens Atlas must never touch: the user does these themselves. */
+    static final Pattern SECRET_SCREEN = Pattern.compile(
+            "(upi\\s*pin|enter\\s*(your\\s*)?(4|6)[- ]digit|\\bm-?pin\\b|\\bpasscode\\b|\\botp\\b|one[- ]time\\s*password|verification\\s*code|enter\\s*(your\\s*)?password|\\bcvv\\b|card\\s*number|net\\s*banking\\s*password)", Pattern.CASE_INSENSITIVE);
+
     static final Pattern SENSITIVE = Pattern.compile(
             "(place\\s*(your\\s*)?order|pay\\s*&\\s*place|complete\\s*(order|purchase|payment)|book\\s*tickets?|pay\\s*and\\s*book|confirm\\s*&\\s*pay|pay\\b|pay\\s*₹|pay\\s*rs|pay\\s*now|proceed\\s*to\\s*pay|make\\s*payment|confirm\\s*(ride|booking|order|pickup|and\\s*pay|payment)|"
                     + "book\\s*(now|ride|uber|ola|auto|cab|moto|mini|sedan|prime|go|xl)|request\\s*(uber|ola|ride|auto|go|moto|premier)|slide\\s*to|swipe\\s*to|^send$|^send\\s|"
@@ -188,15 +192,28 @@ public class AgentService extends AccessibilityService {
         List<String> answers = new ArrayList<>();
         int maxSteps = Ai.prefs(this).getInt("max_steps", 70);
         boolean useShot = Ai.prefs(this).getBoolean("screenshots", true);
-        String lastSig = ""; int same = 0, badJson = 0;
+        String lastSig = ""; int same = 0, badJson = 0, unreadable = 0; boolean askedSecret = false;
         boolean wantShot = true, lastFailed = false;
         int approvedUntil = -1;
         String notes = "";
         for (int step = 1; step <= maxSteps; step++) {
             if (stop) return "stop";
             waitIdle(450, 3000);
+            if (!screenUsable()) { // screen off or locked: pause without using up steps
+                status(label, "Screen is off or locked — unlock your phone to continue.");
+                vibrate(60);
+                long t0 = SystemClock.uptimeMillis();
+                while (!screenUsable() && !stop && SystemClock.uptimeMillis() - t0 < 5 * 60_000) sleep(1000);
+                if (!screenUsable()) { event("fail", "Paused too long — the phone stayed locked.", new JSONObject().put("task", idx)); return "fail"; }
+                step--; continue;
+            }
             Screen sc = capture(false);
-            if (sc == null) { history.add("(screen unreadable, waited)"); sleep(1500); continue; }
+            if (sc == null) {
+                if (++unreadable >= 8) { event("fail", "Couldn't read the screen.", new JSONObject().put("task", idx)); return "fail"; }
+                history.add("(screen unreadable, waited)"); sleep(1200); step--; continue;
+            }
+            unreadable = 0;
+            boolean secret = SECRET_SCREEN.matcher(sc.text).find();
             if (sc.text.equals(lastSig)) same++; else { same = 0; lastSig = sc.text; }
             // screenshots cost time: send one when the element list is thin, the screen is new to us, or we're stuck
             boolean shot = useShot && (shopping || wantShot || lastFailed || same >= 1 || sc.labeled < 12 || step == 1);
@@ -217,6 +234,7 @@ public class AgentService extends AccessibilityService {
             if (same >= 2) u.append("WARNING: the screen has not changed for ").append(same).append(" steps — your last action had no effect. Try something different.\n");
             u.append("CURRENT APP: ").append(label(sc.pkg)).append(" (").append(sc.pkg).append(")\n");
             if (sc.shot != null) u.append("A SCREENSHOT OF THIS SCREEN IS ATTACHED.").append(sc.nodes.isEmpty() ? " There are no readable elements — use tap_xy with positions from the screenshot.\n" : "\n");
+            if (secret) u.append("THIS IS A PIN/OTP/PASSWORD SCREEN: you must not tap, type or scroll here. Use ask_user (once) to ask the user to complete it, then wait, or done if the payment/flow has moved on.\n");
             if (step <= approvedUntil) u.append("THE USER HAS ALREADY APPROVED THE FINAL STEP — complete the payment/booking now with the selected or default method; do not ask again.\n");
             u.append("SCREEN ").append(sc.w).append('x').append(sc.h).append(" ELEMENTS:\n").append(sc.text);
             JSONArray parts = new JSONArray().put(new JSONObject().put("text", u.toString()));
@@ -251,6 +269,18 @@ public class AgentService extends AccessibilityService {
             String thought = a.optString("thought", "");
             int id = a.optInt("id", -1);
             Node n = id >= 0 && id < sc.nodes.size() ? sc.nodes.get(id) : null;
+            if (secret && ("tap".equals(act) || "tap_xy".equals(act) || "type".equals(act) || "long_press".equals(act) || "scroll".equals(act) || "click".equals(act))) {
+                // hard rule, whatever the AI says: never touch PIN / OTP / password screens
+                trace("   BLOCKED " + act + " on a PIN/OTP/password screen");
+                if (!askedSecret) {
+                    askedSecret = true;
+                    String ans = ask(label, "Please complete this step yourself (PIN / OTP / password) — Atlas never touches it. Reply 'done' when finished.");
+                    if (ans == null || "stop".equals(ans)) return "stop";
+                    history.add("user handled the PIN/OTP/password screen: " + q(ans));
+                } else { status(label, "Waiting for you to finish the PIN / OTP screen…"); sleep(4000); history.add("BLOCKED: Atlas never taps on PIN/OTP/password screens — waiting for the user"); }
+                if (step >= 6 && history.size() > 0 && same >= 3) { event("done", "Waiting for you to finish on the PIN/OTP screen.", new JSONObject().put("task", idx)); return "done"; }
+                continue;
+            }
             event("step", thought.isEmpty() ? act : thought, new JSONObject().put("task", idx).put("action", act).put("step", step));
             switch (act) {
                 case "tap": case "click": case "long_press": {
@@ -480,6 +510,14 @@ public class AgentService extends AccessibilityService {
             if (best != null) return best;
         } catch (Exception ignored) { }
         return active;
+    }
+
+    private boolean screenUsable() {
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+            return pm.isInteractive() && !km.isKeyguardLocked();
+        } catch (Exception e) { return true; }
     }
 
     private void waitForPackage(String pkg, long maxMs) {

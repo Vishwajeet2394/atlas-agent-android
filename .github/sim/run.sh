@@ -22,6 +22,7 @@ setup() {
   adb shell settings put secure enabled_accessibility_services $A/$A.AgentService
   adb shell settings put secure accessibility_enabled 1
   adb shell settings put global hide_error_dialogs 1
+  adb shell svc power stayon true; adb shell settings put system screen_off_timeout 1800000; adb shell locksettings set-disabled true >/dev/null 2>&1
   adb shell am start -W -n $A/.MainActivity >/dev/null; sleep 10
 }
 
@@ -38,6 +39,7 @@ run() {
   for p in $PKGS; do adb shell am force-stop $p; adb shell pm clear $p >/dev/null 2>&1; done
   IFS=';' read -ra CS <<< "$cfgs"
   for c in "${CS[@]}"; do [ -z "$c" ] && continue; adb shell am start -n "${c%%=*}/com.atlas.sim.SimActivity" --es sim_config "x${c#*=}" >/dev/null; sleep 1; done
+  adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard >/dev/null 2>&1
   adb shell input keyevent KEYCODE_HOME; sleep 1
   adb logcat -c
   local t0=$(date +%s)
