@@ -220,7 +220,8 @@ public class AgentService extends AccessibilityService {
             }
             Screen sc = capture(false);
             if (sc == null) {
-                if (++unreadable >= 8) { event("fail", "Couldn't read the screen.", new JSONObject().put("task", idx)); return "fail"; }
+                if (++unreadable == 4 && pkg != null) { status(label, "The app looks stuck — reopening it…"); Apps.launch(this, pkg); waitForPackage(pkg, 6000); }
+                if (unreadable >= 9) { event("fail", "Couldn't read the screen.", new JSONObject().put("task", idx)); return "fail"; }
                 history.add("(screen unreadable, waited)"); sleep(1200); step--; continue;
             }
             unreadable = 0;
@@ -280,7 +281,8 @@ public class AgentService extends AccessibilityService {
             String thought = a.optString("thought", "");
             int id = a.optInt("id", -1);
             Node n = id >= 0 && id < sc.nodes.size() ? sc.nodes.get(id) : null;
-            if (secret && ("tap".equals(act) || "tap_xy".equals(act) || "type".equals(act) || "long_press".equals(act) || "scroll".equals(act) || "click".equals(act))) {
+            if (secret && "ask_user".equals(act) && !askedSecret) askedSecret = true; // the AI asked the user itself — next time, hand over
+            else if (secret && !"done".equals(act) && !"fail".equals(act) && (askedSecret || "tap".equals(act) || "tap_xy".equals(act) || "type".equals(act) || "long_press".equals(act) || "scroll".equals(act) || "click".equals(act))) {
                 // hard rule, whatever the AI says: never touch PIN / OTP / password screens
                 trace("   BLOCKED " + act + " on a PIN/OTP/password screen");
                 if (!askedSecret) {

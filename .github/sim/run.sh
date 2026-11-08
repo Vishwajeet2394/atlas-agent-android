@@ -38,7 +38,7 @@ run() {
   for i in $(seq 1 20); do adb logcat -d -s AtlasAgent:I | grep -q "ready:" && break; sleep 1; done
   for p in $PKGS; do adb shell am force-stop $p; adb shell pm clear $p >/dev/null 2>&1; done
   IFS=';' read -ra CS <<< "$cfgs"
-  for c in "${CS[@]}"; do [ -z "$c" ] && continue; adb shell am start -n "${c%%=*}/com.atlas.sim.SimActivity" --es sim_config "x${c#*=}" >/dev/null; sleep 1; done
+  for c in "${CS[@]}"; do [ -z "$c" ] && continue; adb shell am start -n "${c%%=*}/com.atlas.sim.SimActivity" --es sim_config "x${c#*=}" >/dev/null; sleep 1.5; adb shell am force-stop "${c%%=*}"; done
   adb shell input keyevent KEYCODE_WAKEUP; adb shell wm dismiss-keyguard >/dev/null 2>&1
   adb shell input keyevent KEYCODE_HOME; sleep 1
   adb logcat -c
