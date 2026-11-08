@@ -117,6 +117,7 @@ final class Ai {
             String out = p.getString("quota_out:" + model, "");
             if (out.equals(today())) { exhausted++; continue; }
             if (out.equals("gone")) continue;
+            if (System.currentTimeMillis() < p.getLong("slow_until:" + model, 0)) continue; // timed out / overloaded a moment ago
             try {
                 String r = geminiOnce(c, req, msgs, key, model);
                 p.edit().putString("gemini_last_model", model).apply();
@@ -126,11 +127,15 @@ final class Ai {
                 last = e;
                 if (m.contains("no longer available") || m.contains("is not found") || m.contains("not supported for generatecontent")) { p.edit().putString("quota_out:" + model, "gone").apply(); continue; }
                 boolean perMin = m.contains("per minute") || m.contains("perminute") || m.contains("high demand") || m.contains("overloaded") || m.contains("unavailable");
-                if (perMin) continue; // busy right now — try the next model, keep this one for later
-                if (e instanceof java.net.SocketTimeoutException || m.contains("timeout") || m.contains("timed out")) continue; // too slow — next model
+                if (perMin) { p.edit().putLong("slow_until:" + model, System.currentTimeMillis() + (m.contains("perminute") || m.contains("per minute") ? 60_000 : 10 * 60_000)).apply(); continue; } // busy right now — try the next model
+                if (e instanceof java.net.SocketTimeoutException || m.contains("timeout") || m.contains("timed out")) { p.edit().putLong("slow_until:" + model, System.currentTimeMillis() + 10 * 60_000).apply(); continue; } // too slow — skip it for 10 min
                 if (m.contains("per day") || m.contains("perday") || m.contains("quota")) { p.edit().putString("quota_out:" + model, today()).apply(); continue; }
                 throw e;
             }
+        }
+        if (last == null && exhausted == 0) { // everything was only "slow": clear and try the first one again
+            for (String model : order) p.edit().remove("slow_until:" + model).apply();
+            return geminiOnce(c, req, msgs, key, order.iterator().next());
         }
         if (last != null || exhausted > 0) throw new Exception("All Gemini models have used today's free limit. It resets at 1:30 PM IST — or switch to Claude, or enable billing on the key." + (last != null ? " (" + last.getMessage() + ")" : ""));
         throw new Exception("No Gemini model available — check the model name in Settings.");
