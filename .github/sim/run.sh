@@ -27,13 +27,13 @@ setup() {
 
 # run NAME "pkg=cfg;pkg=cfg" "chat message" confirm|cancel "answer1|answer2" CHECKFN
 run() {
-  local name="$1" cfgs="$2" chat="$3" confirm="$4" answers="$5" check="$6" timeout="${7:-420}"
+  local name="$1" cfgs="$2" chat="$3" confirm="$4" answers="${5:-none}" check="$6" timeout="${7:-420}"
   N=$((N+1))
   if [ -n "$ONLY" ] && ! echo ",$ONLY," | grep -q ",$name,"; then return; fi
   echo "::group::[$N] $name — $chat"
   for p in $PKGS; do adb shell am force-stop $p; adb shell pm clear $p >/dev/null 2>&1; done
   IFS=';' read -ra CS <<< "$cfgs"
-  for c in "${CS[@]}"; do [ -z "$c" ] && continue; adb shell am start -n "${c%%=*}/com.atlas.sim.SimActivity" --es sim_config "${c#*=}" >/dev/null; sleep 1; done
+  for c in "${CS[@]}"; do [ -z "$c" ] && continue; adb shell am start -n "${c%%=*}/com.atlas.sim.SimActivity" --es sim_config "x${c#*=}" >/dev/null; sleep 1; done
   adb shell input keyevent KEYCODE_HOME; sleep 1
   adb logcat -c
   local t0=$(date +%s)

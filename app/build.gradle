@@ -27,6 +27,7 @@ android {
         // test-only build for the scenario simulations: auto-answers Confirm/questions. Never published.
         sim {
             initWith release
+            debuggable true
             buildConfigField "boolean", "SIM", "true"
             matchingFallbacks = ["release"]
         }

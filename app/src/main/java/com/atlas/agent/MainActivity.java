@@ -144,7 +144,8 @@ public class MainActivity extends Activity {
             if (i.hasExtra("sim_key")) e.putString("gemini_key", i.getStringExtra("sim_key")).putString("provider", "gemini");
             if (i.hasExtra("sim_model")) e.putString("gemini_model", i.getStringExtra("sim_model"));
             e.putString("sim_confirm", i.getStringExtra("sim_confirm") == null ? "confirm" : i.getStringExtra("sim_confirm"));
-            e.putString("sim_answers", i.getStringExtra("sim_answers") == null ? "" : i.getStringExtra("sim_answers"));
+            String ans = i.getStringExtra("sim_answers");
+            e.putString("sim_answers", ans == null || ans.equals("none") ? "" : ans);
             e.putString("user_name", "Vishwajeet").putString("user_home", "Gangapur Road, Nashik").putString("user_work", "College Road, Nashik");
             e.apply();
             try { pendingShared = new JSONObject().put("simchat", i.getStringExtra("sim_chat")).toString(); } catch (Exception ignored) { }

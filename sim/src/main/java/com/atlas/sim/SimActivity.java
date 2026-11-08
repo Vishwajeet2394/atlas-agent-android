@@ -60,7 +60,8 @@ public class SimActivity extends Activity {
         SharedPreferences p = getSharedPreferences("sim", MODE_PRIVATE);
         Intent in = getIntent();
         if (in != null && in.hasExtra("sim_config")) { // test setup: remember the scenario and quit
-            p.edit().putString("cfg", in.getStringExtra("sim_config")).apply();
+            String c = in.getStringExtra("sim_config"); if (c.startsWith("x")) c = c.substring(1); // "x" prefix keeps empty configs from vanishing on the adb command line
+            p.edit().putString("cfg", c).commit();
             log("CONFIG", new JSONObject());
             finish();
             return;
