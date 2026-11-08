@@ -75,6 +75,16 @@ public class AgentService extends AccessibilityService {
     static final Pattern SECRET_SCREEN = Pattern.compile(
             "(upi\\s*pin|enter\\s*(your\\s*)?(4|6)[- ]digit|\\bm-?pin\\b|\\bpasscode\\b|\\botp\\b|one[- ]time\\s*password|verification\\s*code|enter\\s*(your\\s*)?password|\\bcvv\\b|card\\s*number|net\\s*banking\\s*password)", Pattern.CASE_INSENSITIVE);
 
+    static final Pattern WEAK_FINAL = Pattern.compile("^(confirm|book|continue)$", Pattern.CASE_INSENSITIVE);
+    /** A button that commits money/messages. A bare "Confirm" only counts when a price is on screen. */
+    static boolean isFinal(String label, Screen sc) {
+        String l = label.trim();
+        int k = l.indexOf(" (for: "); if (k > 0) l = l.substring(0, k);
+        if (!SENSITIVE.matcher(l).find()) return false;
+        if (WEAK_FINAL.matcher(l).matches()) return sc != null && sc.text.contains("₹");
+        return true;
+    }
+
     static final Pattern SENSITIVE = Pattern.compile(
             "(place\\s*(your\\s*)?order|pay\\s*&\\s*place|complete\\s*(order|purchase|payment)|book\\s*tickets?|pay\\s*and\\s*book|confirm\\s*&\\s*pay|pay\\b|pay\\s*₹|pay\\s*rs|pay\\s*now|proceed\\s*to\\s*pay|make\\s*payment|confirm\\s*(ride|booking|order|pickup|and\\s*pay|payment)|"
                     + "book\\s*(now|ride|uber|ola|auto|cab|moto|mini|sedan|prime|go|xl)|request\\s*(uber|ola|ride|auto|go|moto|premier)|slide\\s*to|swipe\\s*to|^send$|^send\\s|"
@@ -192,7 +202,8 @@ public class AgentService extends AccessibilityService {
         List<String> answers = new ArrayList<>();
         int maxSteps = Ai.prefs(this).getInt("max_steps", 70);
         boolean useShot = Ai.prefs(this).getBoolean("screenshots", true);
-        String lastSig = ""; int same = 0, badJson = 0, unreadable = 0; boolean askedSecret = false;
+        String lastSig = ""; int same = 0, badJson = 0, unreadable = 0; boolean askedSecret = false, finishNudged = false;
+        boolean mustFinish = !t.optBoolean("prepare_only") && Pattern.compile("(order|book|buy|pay|recharge|send|purchase|checkout)", Pattern.CASE_INSENSITIVE).matcher(goal).find();
         boolean wantShot = true, lastFailed = false;
         int approvedUntil = -1;
         String notes = "";
@@ -285,7 +296,7 @@ public class AgentService extends AccessibilityService {
             switch (act) {
                 case "tap": case "click": case "long_press": {
                     if (n == null) { history.add("tap failed: no element [" + id + "]"); break; }
-                    boolean sensitive = SENSITIVE.matcher(n.label.trim()).find() && !(allow.equals("send") && n.label.trim().toLowerCase(Locale.ROOT).startsWith("send"));
+                    boolean sensitive = isFinal(n.label, sc) && !(allow.equals("send") && n.label.trim().toLowerCase(Locale.ROOT).startsWith("send"));
                     if (sensitive && step <= approvedUntil) { // the user already said yes a moment ago (e.g. "Proceed to pay" then "Pay ₹249")
                         approvedUntil = -1;
                         status(label + " · step " + step, "Tapping " + q(n.label));
@@ -329,7 +340,7 @@ public class AgentService extends AccessibilityService {
                     if (fx < 0 || fy < 0 || fx > 1 || fy > 1) { history.add("tap_xy needs x,y between 0 and 1"); break; }
                     int px = (int) Math.round(fx * sc.w), py = (int) Math.round(fy * sc.h);
                     Node at = null; for (Node c : sc.nodes) if (c.b.contains(px, py) && (c.click || c.check) && (at == null || c.b.width() * c.b.height() < at.b.width() * at.b.height())) at = c;
-                    if (at != null && SENSITIVE.matcher(at.label.trim()).find() && step > approvedUntil) {
+                    if (at != null && isFinal(at.label, sc) && step > approvedUntil) {
                         String r = confirm(label, a.optString("summary", "Atlas is about to tap \u201c" + at.label + "\u201d."), at, sc);
                         if (!"ok".equals(r)) return r;
                         approvedUntil = step + 4;
@@ -376,6 +387,12 @@ public class AgentService extends AccessibilityService {
                 }
                 case "done": {
                     String sum = a.optString("summary", "Done.");
+                    if (mustFinish && approvedUntil < 0 && !secret && !finishNudged) {
+                        // stopped right before paying/booking: the confirm *is* the stop — go back and ask the user
+                        finishNudged = true;
+                        history.add("NOT DONE: this errand must end with confirm on the final button (Pay / Place order / Book / Send) so the user can approve it.");
+                        break;
+                    }
                     event("done", sum, new JSONObject().put("task", idx));
                     status(label, "✓ " + sum);
                     vibrate(40);
@@ -403,7 +420,7 @@ public class AgentService extends AccessibilityService {
                     Screen s2 = capture(false);
                     Node hit = s2 == null ? null : findByLabel(s2, want);
                     if (hit == null) { history.add("follow-up skipped: " + q(want) + " not on screen"); break; }
-                    if (SENSITIVE.matcher(hit.label.trim()).find() && step > approvedUntil) { history.add("follow-up stopped before final step " + q(hit.label)); break; }
+                    if (isFinal(hit.label, s2) && step > approvedUntil) { history.add("follow-up stopped before final step " + q(hit.label)); break; }
                     boolean ok;
                     if ("type".equals(fa)) { ok = type(hit, f.optString("text", "")); if (ok && f.optBoolean("enter")) { sleep(250); pressEnter(); } }
                     else ok = tap(hit);
@@ -1030,6 +1047,7 @@ public class AgentService extends AccessibilityService {
             + "For messages in WhatsApp/Telegram: the chat may already be open with the text typed; check the contact name, then confirm on Send. "
             + "For email in Gmail: the compose screen may already be filled; check To/Subject/Body and use confirm on Send. "
             + "SPEED: use then whenever the next steps are predictable, e.g. type 'biryani' then tap the suggestion labelled 'Biryani'; tap a tab then tap a known button. Atlas finds each follow-up by its label on the fresh screen and stops if it isn't there; it never runs a final payment/send step as a follow-up. "
+            + "Never use done just before the final button: the way to 'stop before paying' is confirm on that button — the user approves, then you finish. Use done only once it is placed/booked/sent (or the GOAL explicitly says not to complete it). "
             + "Use tap_xy only for things that have no element in the list (maps, drawn buttons, popups without labels); prefer ids. Don't use look when a screenshot is already attached. "
             + "Once the user has confirmed, finish the payment screen yourself: keep the method that is already selected (or the first UPI/default option) — never ask which payment method to use unless the GOAL says to. "
             + "Use look when you need to see the screen (no screenshot this turn and the elements are unclear). Prefer the fewest steps; don't wait unless something is loading. "

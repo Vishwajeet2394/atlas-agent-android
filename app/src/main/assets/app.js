@@ -368,7 +368,7 @@ async function send(text) {
     const acts = Array.isArray(r.actions) ? r.actions : [];
     const tasks = acts.filter(a => a && a.type === "phone_task");
     for (const a of acts) { if (a && a.type !== "phone_task") await runAction(a, reply, text); }
-    if (tasks.length) await queueTasks(reply, tasks.map(t => ({ app: t.app || "", goal: t.goal || text })));
+    if (tasks.length) await queueTasks(reply, tasks.map(t => ({ app: t.app || "", goal: finishGoal(t.goal || text, text) })));
     if (!reply.text && !(reply.cards || []).length) { reply.text = "Done."; updateMsg(reply); }
     saveChat();
     if (SIM) { console.log("ATLAS_ACTIONS " + JSON.stringify(acts)); console.log("ATLAS_REPLY " + (reply.text || "").replace(/\n/g, " ")); }
@@ -427,6 +427,14 @@ Rules: When the user asks to order, book, buy, recharge, pay or send, the phone_
   for (const f of files) parts.push({ file: f, as: "auto", pages: 6 });
   const msgs = [...history(), { role: "user", parts }];
   return aiJson({ system: sys, maxTokens: 3000, messages: msgs });
+}
+
+// The planner sometimes writes "stop before paying"; the agent's Confirm step is that stop, so make the goal complete.
+function finishGoal(goal, said) {
+  const wantsDone = /\b(order|book|buy|pay|recharge|send|purchase|get me)\b/i.test(said) && !/\b(don'?t|do not|only|just) (order|pay|book|buy)|add to cart only|without (ordering|paying)/i.test(said);
+  if (!wantsDone) return goal;
+  const g = goal.replace(/[,;]?\s*(and\s+)?(then\s+)?(stop|pause|wait)\s+(just\s+)?(before|at|on)\s+[^.]*\.?/ig, "").replace(/(proceed|go)\s+(up\s+)?to\s+(the\s+)?(final\s+)?(payment|checkout)\s*(screen|page|step)?/ig, "complete the payment").trim();
+  return g.replace(/\.?$/, ". ") + "Complete it through the final step (place the order / pay / book) — Atlas asks the user to confirm before that last tap.";
 }
 
 // ---------- actions ----------
