@@ -128,6 +128,7 @@ public class AgentService extends AccessibilityService {
         stop = false; busy = true;
         try (java.io.FileWriter w = new java.io.FileWriter(traceFile(s), false)) { w.write("Atlas errand log · " + new java.util.Date() + " · provider " + Ai.provider(s) + "\n"); } catch (Exception ignored) { }
         new Thread(() -> {
+            Ai.READ_TIMEOUT.set(45000);
             try {
                 for (int i = 0; i < tasks.length() && !stop; i++) {
                     JSONObject t = tasks.optJSONObject(i);
@@ -213,9 +214,12 @@ public class AgentService extends AccessibilityService {
             req.put("messages", new JSONArray().put(new JSONObject().put("role", "user").put("parts", parts)));
             String raw = null;
             for (int attempt = 0; attempt < 4 && raw == null && !stop; attempt++) {
-                try { raw = Ai.call(this, req); }
+                long tc = SystemClock.uptimeMillis();
+                try { raw = Ai.call(this, req); trace("   ai " + (SystemClock.uptimeMillis() - tc) + " ms · " + Ai.prefs(this).getString("gemini_last_model", "")); }
                 catch (Exception e) {
                     String m = String.valueOf(e.getMessage());
+                    trace("   ai FAILED after " + (SystemClock.uptimeMillis() - tc) + " ms: " + m);
+                    android.util.Log.i("AtlasAgent", "ai-error: " + m);
                     boolean rate = m.toLowerCase(Locale.ROOT).contains("rate") || m.contains("429") || m.toLowerCase(Locale.ROOT).contains("overloaded") || m.contains("503");
                     if (m.contains("API key") || m.contains("Settings first") || attempt == 3) { event("fail", "Couldn't reach the AI: " + m, new JSONObject().put("task", idx)); return "fail"; }
                     int wait = rate ? new int[]{8, 20, 40}[attempt] : 3;

@@ -25,6 +25,9 @@ import java.util.Locale;
 final class Ai {
     private Ai() { }
 
+    /** Agent steps use a shorter timeout so a stuck model is skipped instead of freezing the errand. */
+    static final ThreadLocal<Integer> READ_TIMEOUT = new ThreadLocal<>();
+
     static SharedPreferences prefs(Context c) { return c.getSharedPreferences("atlas", Context.MODE_PRIVATE); }
 
     static String provider(Context c) { return prefs(c).getString("provider", "gemini"); }
@@ -122,6 +125,7 @@ final class Ai {
                 if (m.contains("no longer available") || m.contains("is not found") || m.contains("not supported for generatecontent")) { p.edit().putString("quota_out:" + model, "gone").apply(); continue; }
                 boolean perMin = m.contains("per minute") || m.contains("perminute") || m.contains("high demand") || m.contains("overloaded") || m.contains("unavailable");
                 if (perMin) continue; // busy right now — try the next model, keep this one for later
+                if (e instanceof java.net.SocketTimeoutException || m.contains("timeout") || m.contains("timed out")) continue; // too slow — next model
                 if (m.contains("per day") || m.contains("perday") || m.contains("quota")) { p.edit().putString("quota_out:" + model, today()).apply(); continue; }
                 throw e;
             }
@@ -234,7 +238,7 @@ final class Ai {
         HttpURLConnection h = (HttpURLConnection) new URL(url).openConnection();
         h.setRequestMethod("POST");
         h.setConnectTimeout(20000);
-        h.setReadTimeout(120000);
+        h.setReadTimeout(READ_TIMEOUT.get() == null ? 120000 : READ_TIMEOUT.get());
         h.setDoOutput(true);
         h.setRequestProperty("content-type", "application/json");
         for (String[] kv : headers) h.setRequestProperty(kv[0], kv[1]);

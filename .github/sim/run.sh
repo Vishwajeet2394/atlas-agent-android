@@ -31,6 +31,7 @@ run() {
   N=$((N+1))
   if [ -n "$ONLY" ] && ! echo ",$ONLY," | grep -q ",$name,"; then return; fi
   echo "::group::[$N] $name — $chat"
+  adb shell am force-stop $A; adb shell settings put secure enabled_accessibility_services $A/$A.AgentService; sleep 3
   for p in $PKGS; do adb shell am force-stop $p; adb shell pm clear $p >/dev/null 2>&1; done
   IFS=';' read -ra CS <<< "$cfgs"
   for c in "${CS[@]}"; do [ -z "$c" ] && continue; adb shell am start -n "${c%%=*}/com.atlas.sim.SimActivity" --es sim_config "x${c#*=}" >/dev/null; sleep 1; done
@@ -58,7 +59,7 @@ run() {
   # stop anything still running before the next scenario
   adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1
   echo "| $N | $name — $chat | $res | ${dt}s | $(echo $note | tr '|' '/') |" >> $REPORT
-  echo "$res ($dt s) $note"; grep -E "ORDER|RIDE|MAIL |MSG |PAY_PIN|ATLAS_ACTIONS|ATLAS_REPLY|ATLAS_CARD|sim-answer|done:|fail:|cancelled|confirm:" "$LOG" | cut -c1-400 | tail -25
+  echo "$res ($dt s) $note"; grep -E "ORDER|RIDE|MAIL |MSG |PAY_PIN|ATLAS_ACTIONS|ATLAS_REPLY|ATLAS_CARD|sim-answer|done:|fail:|cancelled|confirm:|ai-error|step:" "$LOG" | cut -c1-300 | tail -40; grep -E "^   ai" "$OUT/$name.trace.txt" | head -8
   echo "::endgroup::"
   sleep 8   # stay friendly with the Gemini rate limit
 }
