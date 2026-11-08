@@ -27,6 +27,7 @@ final class Ai {
 
     /** Agent steps use a shorter timeout so a stuck model is skipped instead of freezing the errand. */
     static final ThreadLocal<Integer> READ_TIMEOUT = new ThreadLocal<>();
+    static final ThreadLocal<Boolean> DEEP = new ThreadLocal<>();
 
     static SharedPreferences prefs(Context c) { return c.getSharedPreferences("atlas", Context.MODE_PRIVATE); }
 
@@ -41,6 +42,7 @@ final class Ai {
     static String call(Context c, JSONObject req) throws Exception {
         String prov = req.optString("provider", provider(c));
         if ("selftest".equals(prov)) return selftest(req);
+        DEEP.set(req.optBoolean("deep") || req.toString().length() > 400_000); // reading big files may take longer
         JSONArray msgs = resolveFiles(c, req.getJSONArray("messages"));
         return "claude".equals(prov) ? claude(c, req, msgs) : gemini(c, req, msgs);
     }
@@ -245,7 +247,7 @@ final class Ai {
         HttpURLConnection h = (HttpURLConnection) new URL(url).openConnection();
         // hard deadline for the whole call: servers can keep a slow reply alive with whitespace, so a read timeout alone never fires
         Integer rt = READ_TIMEOUT.get();
-        long deadline = rt == null ? 150_000 : Math.max(20_000, rt - 10_000);
+        long deadline = rt == null ? (DEEP.get() != null && DEEP.get() ? 90_000 : 40_000) : Math.max(20_000, rt - 10_000);
         final boolean[] killed = {false};
         java.util.concurrent.ScheduledFuture<?> watchdog = WATCHDOG.schedule(() -> { killed[0] = true; try { h.disconnect(); } catch (Exception ignored) { } }, deadline, java.util.concurrent.TimeUnit.MILLISECONDS);
         try {
