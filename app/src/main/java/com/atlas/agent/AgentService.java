@@ -288,9 +288,15 @@ public class AgentService extends AccessibilityService {
                     String ans = ask(label, "Please complete this step yourself (PIN / OTP / password) — Atlas never touches it. Reply 'done' when finished.");
                     if (ans == null || "stop".equals(ans)) return "stop";
                     history.add("user handled the PIN/OTP/password screen: " + q(ans));
-                } else { status(label, "Waiting for you to finish the PIN / OTP screen…"); sleep(4000); history.add("BLOCKED: Atlas never taps on PIN/OTP/password screens — waiting for the user"); }
-                if (step >= 6 && history.size() > 0 && same >= 3) { event("done", "Waiting for you to finish on the PIN/OTP screen.", new JSONObject().put("task", idx)); return "done"; }
-                continue;
+                    sleep(2500);
+                    continue;
+                }
+                // still on the PIN screen after the user answered: hand over instead of waiting around
+                String sum = "Over to you: finish the PIN / OTP on screen. " + (notes.isEmpty() ? "" : notes);
+                event("done", sum.trim(), new JSONObject().put("task", idx));
+                status(label, "✓ Over to you — finish the PIN on screen.");
+                vibrate(40);
+                return "done";
             }
             event("step", thought.isEmpty() ? act : thought, new JSONObject().put("task", idx).put("action", act).put("step", step));
             switch (act) {

@@ -131,6 +131,13 @@ final class Device {
                         return res(false, "Android needs Do Not Disturb access for silent mode — allow Atlas on the screen that opened, then ask again");
                     }
                 }
+                case "dnd": {
+                    android.app.NotificationManager nm = (android.app.NotificationManager) c.getSystemService(Context.NOTIFICATION_SERVICE);
+                    if (!nm.isNotificationPolicyAccessGranted()) return res(false, "needs-access");
+                    boolean on = a.optBoolean("on", true);
+                    nm.setInterruptionFilter(on ? android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY : android.app.NotificationManager.INTERRUPTION_FILTER_ALL);
+                    return res(true, "Do Not Disturb " + (on ? "on" : "off"));
+                }
                 case "settings": {
                     String p = a.optString("panel", "");
                     String act;

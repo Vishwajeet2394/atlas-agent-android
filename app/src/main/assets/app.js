@@ -365,7 +365,7 @@ async function send(text) {
     const r = await route(text || "Tell me what this file contains.", files);
     reply.typing = false; reply.text = r.say || "";
     updateMsg(reply); saveChat();
-    const acts = Array.isArray(r.actions) ? r.actions : [];
+    const acts = fixToggles(Array.isArray(r.actions) ? r.actions : [], text);
     const tasks = acts.filter(a => a && a.type === "phone_task");
     for (const a of acts) { if (a && a.type !== "phone_task") await runAction(a, reply, text); }
     if (tasks.length) await queueTasks(reply, tasks.map(t => ({ app: t.app || "", goal: finishGoal(t.goal || text, text) })));
@@ -429,6 +429,23 @@ Rules: When the user asks to order, book, buy, recharge, pay or send, the phone_
   return aiJson({ system: sys, maxTokens: 3000, messages: msgs });
 }
 
+// "Turn on Wi-Fi / DND / Bluetooth…" must flip the switch, not just open a settings page.
+const TOGGLES = { wifi: "Wi-Fi", "wi-fi": "Wi-Fi", bluetooth: "Bluetooth", dnd: "Do not disturb", "do not disturb": "Do not disturb", airplane: "Airplane mode", "aeroplane": "Airplane mode", "flight mode": "Airplane mode", hotspot: "Hotspot", "mobile data": "Mobile data", data: "Mobile data", location: "Location", gps: "Location", "auto-rotate": "Auto-rotate", rotate: "Auto-rotate", "battery saver": "Battery saver", "dark mode": "Dark theme", "dark theme": "Dark theme", "night light": "Night Light" };
+function fixToggles(acts, said) {
+  const m = said.toLowerCase().match(/\b(turn|switch|put|set)?\s*(on|off|enable|disable|activate|deactivate)\b/);
+  if (!m) return acts;
+  const on = !/\b(off|disable|deactivate)\b/.test(said.toLowerCase());
+  const key = Object.keys(TOGGLES).sort((a, b) => b.length - a.length).find(k => said.toLowerCase().includes(k));
+  if (!key) return acts;
+  const tile = TOGGLES[key];
+  const others = acts.filter(a => !(a.type === "device" && (a.op === "settings" || a.op === "dnd")) && !(a.type === "phone_task" && /quick ?settings/i.test(a.app || "")));
+  if (tile === "Do not disturb") {
+    const r = J(N.device(JSON.stringify({ op: "dnd", on })), {});
+    if (r.ok) return [...others, { type: "device", op: "noop_done", text: r.text }];
+  }
+  return [...others, { type: "phone_task", app: "quick settings", goal: `Turn ${tile} ${on ? "on" : "off"} using its Quick Settings tile (check its current state first; if it is already ${on ? "on" : "off"}, just report that).` }];
+}
+
 // The planner sometimes writes "stop before paying"; the agent's Confirm step is that stop, so make the goal complete.
 function finishGoal(goal, said) {
   const wantsDone = /\b(order|book|buy|pay|recharge|send|purchase|get me)\b/i.test(said) && !/\b(don'?t|do not|only|just) (order|pay|book|buy)|add to cart only|without (ordering|paying)/i.test(said);
@@ -479,6 +496,8 @@ async function runAction(a, reply, userText) {
     let attach = [];
     if (a.attach_query && N.hasFiles()) { const r = await findFiles(a.attach_query, a.attach_kind || "any", "score", 3); attach = r.items.slice(0, 1).map(f => f.p); }
     push({ kind: "email", to: a.to || "", cc: a.cc || "", subject: a.subject || "", body: a.body || "", attach });
+  } else if (a.type === "device" && a.op === "noop_done") {
+    push({ kind: "done", ok: true, text: a.text, icon: "moon" });
   } else if (a.type === "device") {
     if (["screenshot", "lock"].includes(a.op) && !N.agentOn()) { push(setupCard("agent")); return; }
     const r = J(N.device(JSON.stringify(a)), { ok: false, text: "Failed" });

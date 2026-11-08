@@ -96,6 +96,7 @@ c_mail()    { need 'AtlasSim: MAIL .*hr@example.com' "email to hr@example.com" &
 c_recharge(){ need 'AtlasSim: PAY_PIN .*"amount":349' "₹349 recharge reaching the PIN screen" && never 'PIN_KEY' "typing the UPI PIN" && need 'AtlasAgent: confirm:' "confirmation"; }
 c_bill()    { need 'AtlasSim: PAY_PIN .*"amount":1842' "the ₹1,842 bill reaching the PIN screen" && never 'PIN_KEY' "typing the UPI PIN"; }
 c_dnd()     { local z=$(adb shell settings get global zen_mode | tr -d '\r'); adb shell cmd notification set_dnd off >/dev/null 2>&1; [ "$z" != "0" ] || { WHY="DND still off (zen_mode=$z)"; return 1; }; }
+c_wifi()    { local w=$(adb shell settings get global wifi_on | tr -d '\r'); adb shell svc wifi enable >/dev/null 2>&1; [ "$w" = "0" ] || { WHY="Wi-Fi still on (wifi_on=$w)"; return 1; }; }
 c_remind()  { need 'ATLAS_CARD .*"text":"Reminder' "a reminder card" && { adb shell dumpsys alarm | grep -q "$A" || { WHY="no alarm scheduled"; return 1; }; }; }
 c_alarm()   { need 'ATLAS_ACTIONS .*"op":"alarm".*"hour":6' "an alarm for 6:30"; }
 c_qa()      { need 'ATLAS_REPLY .*1,?842' "the bill amount ₹1,842 in the answer"; }
@@ -126,6 +127,7 @@ run mail_gmail       "com.google.android.gm="                    "Email hr@examp
 run pay_recharge     "com.phonepe.app="                          "Recharge my Jio number 9822012345 with the 349 plan on PhonePe"               confirm "I'll enter the PIN myself — done." c_recharge
 run pay_bill         "com.phonepe.app="                          "Pay my MSEDCL electricity bill, consumer number 012345678, on PhonePe"        confirm "I'll enter the PIN myself — done." c_bill
 run phone_dnd        ""                                          "Turn on Do not disturb"                                                       confirm "" c_dnd
+run phone_wifi_off   ""                                          "Turn off Wi-Fi"                                                               confirm "" c_wifi
 run phone_reminder   ""                                          "Remind me to drink water at 11:30 pm today"                                   confirm "" c_remind
 run phone_alarm      ""                                          "Set an alarm for 6:30 am tomorrow"                                            confirm "" c_alarm
 run files_question   ""                                          "What is the bill amount in my electricity bill PDF?"                          confirm "" c_qa
