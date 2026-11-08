@@ -1,0 +1,19 @@
+name: Probe Gemini models
+on: workflow_dispatch
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: List models and test each candidate (prints status only, never the key)
+        env: { K: "${{ secrets.GEMINI_API_KEY }}" }
+        run: |
+          curl -s "https://generativelanguage.googleapis.com/v1beta/models?pageSize=200" -H "x-goog-api-key: $K" \
+            | jq -r '.models[] | select(.supportedGenerationMethods|index("generateContent")) | .name' | sed 's#models/##' | grep -i gemini | sort > models.txt
+          cat models.txt
+          echo "---- one tiny request per flash/lite model"
+          for m in $(grep -E "flash|lite" models.txt | grep -vE "image|tts|audio|live|embedding|exp|preview-0" ); do
+            r=$(curl -s -w "\n%{http_code}" "https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent" -H "x-goog-api-key: $K" -H "content-type: application/json" \
+               -d '{"contents":[{"role":"user","parts":[{"text":"Reply with OK"}]}],"generationConfig":{"maxOutputTokens":256}}')
+            code=$(echo "$r" | tail -1); msg=$(echo "$r" | head -n -1 | jq -r '.error.message // (.candidates[0].content.parts[0].text // "")' 2>/dev/null | head -c 220 | tr '\n' ' ')
+            echo "$code  $m  $msg"
+          done
