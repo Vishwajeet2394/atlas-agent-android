@@ -208,6 +208,8 @@ public class AgentService extends AccessibilityService {
             }
             if (same >= 2) u.append("WARNING: the screen has not changed for ").append(same).append(" steps — your last action had no effect. Try something different.\n");
             u.append("CURRENT APP: ").append(label(sc.pkg)).append(" (").append(sc.pkg).append(")\n");
+            if (sc.shot != null) u.append("A SCREENSHOT OF THIS SCREEN IS ATTACHED.").append(sc.nodes.isEmpty() ? " There are no readable elements — use tap_xy with positions from the screenshot.\n" : "\n");
+            if (step <= approvedUntil) u.append("THE USER HAS ALREADY APPROVED THE FINAL STEP — complete the payment/booking now with the selected or default method; do not ask again.\n");
             u.append("SCREEN ").append(sc.w).append('x').append(sc.h).append(" ELEMENTS:\n").append(sc.text);
             JSONArray parts = new JSONArray().put(new JSONObject().put("text", u.toString()));
             if (sc.shot != null) parts.put(new JSONObject().put("mime", "image/jpeg").put("data", sc.shot));
@@ -284,6 +286,24 @@ public class AgentService extends AccessibilityService {
                     history.add("scrolled " + dir + (n != null ? " in [" + id + "]" : ""));
                     break;
                 }
+                case "tap_xy": {
+                    double fx = a.optDouble("x", -1), fy = a.optDouble("y", -1);
+                    if (fx < 0 || fy < 0 || fx > 1 || fy > 1) { history.add("tap_xy needs x,y between 0 and 1"); break; }
+                    int px = (int) Math.round(fx * sc.w), py = (int) Math.round(fy * sc.h);
+                    Node at = null; for (Node c : sc.nodes) if (c.b.contains(px, py) && (c.click || c.check) && (at == null || c.b.width() * c.b.height() < at.b.width() * at.b.height())) at = c;
+                    if (at != null && SENSITIVE.matcher(at.label.trim()).find() && step > approvedUntil) {
+                        String r = confirm(label, a.optString("summary", "Atlas is about to tap \u201c" + at.label + "\u201d."), at, sc);
+                        if (!"ok".equals(r)) return r;
+                        approvedUntil = step + 4;
+                        history.add("user CONFIRMED and tapped " + q(at.label));
+                        break;
+                    }
+                    status(label + " · step " + step, short_(thought, "Tapping the screen"));
+                    boolean ok = gestureTap(px, py, 60);
+                    history.add((ok ? "tapped at " : "tap FAILED at ") + String.format(Locale.US, "(%.2f, %.2f)", fx, fy) + (at != null ? " on " + q(at.label) : ""));
+                    lastFailed = !ok;
+                    break;
+                }
                 case "back": performGlobalAction(GLOBAL_ACTION_BACK); history.add("pressed Back"); break;
                 case "home": performGlobalAction(GLOBAL_ACTION_HOME); history.add("pressed Home"); break;
                 case "wait": status(label + " · step " + step, short_(thought, "Waiting for the app…")); sleep(1800); history.add("waited"); break;
@@ -304,6 +324,12 @@ public class AgentService extends AccessibilityService {
                     break;
                 }
                 case "confirm": {
+                    if (step <= approvedUntil && n != null) { // already approved a moment ago — just press it
+                        boolean ok = tap(n);
+                        history.add((ok ? "tapped (approved)" : "tap FAILED on") + " [" + id + "] " + q(n.label));
+                        lastFailed = !ok;
+                        break;
+                    }
                     String r = confirm(label, a.optString("summary", "Ready for the final step."), n, sc);
                     if (!"ok".equals(r)) return r;
                     approvedUntil = step + 4; // one OK covers the next payment screen too
@@ -415,7 +441,7 @@ public class AgentService extends AccessibilityService {
     private void answer(String r) { reply.set(r); CountDownLatch l = waitReply; if (l != null) l.countDown(); }
 
     // ============================================================ screen reading
-    static final class Node { AccessibilityNodeInfo n; String label = "", cls = "View", flags = ""; Rect b; boolean click, edit, scroll, check, own, covered; }
+    static final class Node { AccessibilityNodeInfo n; String label = "", cls = "View", flags = "", ctx; Rect b; boolean click, edit, scroll, check, own, covered; }
     static final class Screen { List<Node> nodes = new ArrayList<>(); String text = ""; String pkg = ""; String shot; int w, h, labeled; }
 
     private boolean ours(AccessibilityNodeInfo r) { return r != null && r.getPackageName() != null && getPackageName().contentEquals(r.getPackageName()); }
@@ -465,7 +491,25 @@ public class AgentService extends AccessibilityService {
         s.w = dm.widthPixels; s.h = dm.heightPixels;
         s.pkg = root.getPackageName() == null ? "" : root.getPackageName().toString();
         List<Node> all = new ArrayList<>();
-        walk(root, all, 0, new int[]{0});
+        List<AccessibilityNodeInfo> roots = new ArrayList<>();
+        roots.add(root);
+        try {
+            List<AccessibilityWindowInfo> ws = new ArrayList<>(getWindows());
+            ws.sort((a, b) -> Integer.compare(b.getLayer(), a.getLayer()));
+            for (AccessibilityWindowInfo w : ws) {
+                if (w.getType() != AccessibilityWindowInfo.TYPE_APPLICATION) continue;
+                AccessibilityNodeInfo x = w.getRoot();
+                if (x == null || x.equals(root) || x.getPackageName() == null || !s.pkg.contentEquals(x.getPackageName())) continue;
+                roots.add(x); // dialogs, bottom sheets and the screen under them
+            }
+        } catch (Exception ignored) { }
+        // the top-most window of the app goes first so popups/sheets get the low ids
+        int[] seen = {0};
+        for (AccessibilityNodeInfo r : roots) walk(r, all, 0, seen);
+        if (all.isEmpty()) trace("   (empty tree) windows: " + describeWindows());
+        java.util.Map<String, Integer> freq = new java.util.HashMap<>();
+        for (Node x : all) freq.merge(x.label, 1, Integer::sum);
+        for (Node x : all) if (x.ctx != null && freq.getOrDefault(x.label, 0) > 1) x.label = x.label + " (for: " + x.ctx + ")";
         // Keep what matters: inputs and buttons first, then plain text — then show them in reading order.
         List<Node> pick = new ArrayList<>();
         int interactive = 0;
@@ -486,6 +530,12 @@ public class AgentService extends AccessibilityService {
         s.text = sb.toString();
         if (withShot) s.shot = screenshot();
         return s;
+    }
+
+    private String describeWindows() {
+        StringBuilder sb = new StringBuilder();
+        try { for (AccessibilityWindowInfo w : getWindows()) { AccessibilityNodeInfo r = w.getRoot(); sb.append("[type ").append(w.getType()).append(" layer ").append(w.getLayer()).append(w.isActive() ? " active" : "").append(" ").append(r == null ? "no-root" : r.getPackageName() + " kids " + r.getChildCount()).append("] "); } } catch (Exception ignored) { }
+        return sb.toString();
     }
 
     private static String clean(CharSequence c) { return c == null ? "" : c.toString().replace('\n', ' ').replaceAll("\\s+", " ").trim(); }
@@ -526,7 +576,7 @@ public class AgentService extends AccessibilityService {
                 for (int up = 0; up < 3 && p != null; up++) {
                     StringBuilder sb = new StringBuilder(); texts(p, n, sb, new int[]{30}, 0);
                     String ctx = sb.toString().replace(label, "").replaceAll("^[ ·]+|[ ·]+$", "");
-                    if (ctx.length() >= 3) { label = label + " (for: " + (ctx.length() > 80 ? ctx.substring(0, 77) + "…" : ctx) + ")"; break; }
+                    if (ctx.length() >= 3) { x.ctx = ctx.length() > 80 ? ctx.substring(0, 77) + "…" : ctx; break; }
                     p = p.getParent();
                 }
             }
@@ -909,7 +959,7 @@ public class AgentService extends AccessibilityService {
     // ============================================================ prompt
     static final String SYSTEM = "You are Atlas, an AI agent that operates the user's Android phone (India) through the accessibility API to complete a GOAL. "
             + "Every turn you get the visible UI elements as lines like `[id] Class \"label\" {flags} @x,y`, usually with a screenshot. "
-            + "Reply with ONE JSON object: {\"thought\": \"<=20 words on what you see and why\", \"action\": \"tap|long_press|type|scroll|back|wait|look|open_app|ask_user|confirm|done|fail\", "
+            + "Reply with ONE JSON object: {\"thought\": \"<=20 words on what you see and why\", \"action\": \"tap|tap_xy|long_press|type|scroll|back|wait|look|open_app|ask_user|confirm|done|fail\", \"x\": 0-1, \"y\": 0-1 (tap_xy only: position as a fraction of screen width/height, read from the screenshot), "
             + "\"id\": <element id for tap/type/scroll/confirm>, \"text\": \"for type\", \"enter\": true|false, \"direction\": \"up|down|left|right\", \"app\": \"for open_app\", "
             + "\"question\": \"for ask_user\", \"summary\": \"for confirm/done/fail\", \"then\": [optional, up to 3 follow-up actions to do right after this one without asking you again: {\"action\": \"tap|type\", \"label\": \"the label the element will have\", \"text\": \"for type\"}], \"notes\": \"optional: your running progress notes, e.g. 'added: milk 1L, eggs 6 | left: bread, onions 1kg' — they are shown back to you every step\"}.\n"
             + "HARD RULES:\n"
@@ -934,6 +984,8 @@ public class AgentService extends AccessibilityService {
             + "For messages in WhatsApp/Telegram: the chat may already be open with the text typed; check the contact name, then confirm on Send. "
             + "For email in Gmail: the compose screen may already be filled; check To/Subject/Body and use confirm on Send. "
             + "SPEED: use then whenever the next steps are predictable, e.g. type 'biryani' then tap the suggestion labelled 'Biryani'; tap a tab then tap a known button. Atlas finds each follow-up by its label on the fresh screen and stops if it isn't there; it never runs a final payment/send step as a follow-up. "
+            + "Use tap_xy only for things that have no element in the list (maps, drawn buttons, popups without labels); prefer ids. Don't use look when a screenshot is already attached. "
+            + "Once the user has confirmed, finish the payment screen yourself: keep the method that is already selected (or the first UPI/default option) — never ask which payment method to use unless the GOAL says to. "
             + "Use look when you need to see the screen (no screenshot this turn and the elements are unclear). Prefer the fewest steps; don't wait unless something is loading. "
             + "If an action had no effect, try a different element, scroll, or wait. Use done with a one-line summary when the goal is achieved (e.g. ride booked, order placed, or everything is ready), or fail with the reason if it truly can't be done. Element ids change every turn — only use ids from the current list.";
 }

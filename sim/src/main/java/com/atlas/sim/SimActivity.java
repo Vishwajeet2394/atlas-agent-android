@@ -411,7 +411,7 @@ public class SimActivity extends Activity {
         b.addView(txt("Payment Options", 20, true)); b.addView(txt("Amount to pay ₹" + amount, 15, false));
         b.addView(txt("UPI", 15, true));
         final String[] method = {"Google Pay"};
-        for (String m : new String[]{"Google Pay", "PhonePe", "Paytm UPI"}) { LinearLayout c = card(() -> { method[0] = m; toastLike(m + " selected"); }, m, "Pay via " + m); b.addView(c, wrapW()); }
+        for (String m : new String[]{"Google Pay", "PhonePe", "Paytm UPI"}) { LinearLayout c = card(() -> { method[0] = m; toastLike(m + " selected"); }, (m.equals("Google Pay") ? "✓ " : "") + m, m.equals("Google Pay") ? "Selected · Pay via " + m : "Pay via " + m); c.setSelected(m.equals("Google Pay")); b.addView(c, wrapW()); }
         b.addView(txt("Cash on Delivery", 15, true)); b.addView(card(() -> { method[0] = "Cash"; toastLike("Cash selected"); }, "Pay on Delivery", "Cash/UPI on delivery"), wrapW());
         screen("payment", "Payment", b, btn("Pay ₹" + amount, () -> placeOrder(amount)));
     }
