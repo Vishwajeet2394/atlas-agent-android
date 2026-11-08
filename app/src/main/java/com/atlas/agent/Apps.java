@@ -60,8 +60,12 @@ final class Apps {
         KNOWN.put("gpay", new String[]{"com.google.android.apps.nbu.paisa.user"});
     }
 
+    /** Installed, enabled and openable (a disabled app still has package info, but can't be launched). */
     static boolean installed(Context c, String pkg) {
-        try { c.getPackageManager().getPackageInfo(pkg, 0); return true; } catch (Exception e) { return false; }
+        try {
+            android.content.pm.ApplicationInfo ai = c.getPackageManager().getApplicationInfo(pkg, 0);
+            return ai.enabled && c.getPackageManager().getLaunchIntentForPackage(pkg) != null;
+        } catch (Exception e) { return false; }
     }
 
     /** "uber", "Swiggy Instamart", "com.ubercab" or any launcher label → an installed package, or null. */

@@ -174,7 +174,15 @@ public class AgentService extends AccessibilityService {
             goal = "Open Instamart inside the Swiggy app first (the Instamart tile/tab), then: " + goal;
         boolean shopping = pkg != null && SHOP_APPS.contains(pkg);
         trace("\n==== TASK " + (idx + 1) + ": " + goal + "  [" + (pkg == null ? app : pkg) + "]");
-        if (pkg != null && !t.optBoolean("nolaunch")) { Apps.launch(this, pkg); waitForPackage(pkg, 8000); }
+        if (pkg != null && !t.optBoolean("nolaunch")) {
+            if (!Apps.launch(this, pkg)) {
+                event("fail", "Couldn't open " + label(pkg) + ".", new JSONObject().put("task", idx));
+                status(label, "Couldn't open " + label(pkg) + " — skipped.");
+                sleep(2000);
+                return "fail";
+            }
+            waitForPackage(pkg, 8000);
+        }
         else sleep(600);
         List<String> history = new ArrayList<>();
         List<String> answers = new ArrayList<>();
