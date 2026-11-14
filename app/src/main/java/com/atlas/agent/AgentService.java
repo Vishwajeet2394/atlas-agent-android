@@ -59,7 +59,10 @@ public class AgentService extends AccessibilityService {
     private Handler ui;
     private volatile long lastEvent = 0;
     private WindowManager wm;
-    private LinearLayout card;
+    private LinearLayout card, body, header;
+    private android.widget.ProgressBar spinner;
+    private TextView tStatus, chevron, sStop;
+    private boolean expanded = false;
     private TextView tTitle, tBody;
     private EditText input;
     private TextView bA, bB;
@@ -227,7 +230,7 @@ public class AgentService extends AccessibilityService {
         String notes = "";
         for (int step = 1; step <= maxSteps; step++) {
             if (stop) return "stop";
-            waitIdle(450, 3000);
+            waitIdle(280, 2200);
             if (!screenUsable()) { // screen off or locked: pause without using up steps
                 status(label, "Screen is off or locked — unlock your phone to continue.");
                 vibrate(60);
@@ -466,7 +469,7 @@ public class AgentService extends AccessibilityService {
                     sleep(2500);
                     return "fail";
                 }
-                default: history.add("unknown action " + act); sleep(400);
+                default: history.add("unknown action " + act); sleep(250);
             }
             // follow-up actions planned in the same reply — saves a full AI round trip each
             JSONArray then = a.optJSONArray("then");
@@ -476,7 +479,7 @@ public class AgentService extends AccessibilityService {
                     if (f == null) break;
                     String fa = f.optString("action"), want = f.optString("label", "").trim();
                     if (!("tap".equals(fa) || "type".equals(fa)) || want.isEmpty()) break;
-                    waitIdle(350, 2200);
+                    waitIdle(240, 1600);
                     Screen s2 = capture(false);
                     Node hit = s2 == null ? null : findByLabel(s2, want);
                     if (hit == null) { history.add("follow-up skipped: " + q(want) + " not on screen"); break; }
@@ -489,10 +492,10 @@ public class AgentService extends AccessibilityService {
                     history.add((ok ? "then " + ("type".equals(fa) ? "typed " + q(f.optString("text")) + " into " : "tapped ") : "then FAILED on ") + q(hit.label));
                     trace("   then " + fa + " " + q(want) + (ok ? " ✓" : " ✗"));
                     if (!ok) { lastFailed = true; break; }
-                    sleep(250);
+                    sleep(160);
                 }
             }
-            sleep(250);
+            sleep(150);
         }
         event("fail", "Stopped after the step limit without finishing.", new JSONObject().put("task", idx));
         return "fail";
@@ -774,7 +777,7 @@ public class AgentService extends AccessibilityService {
         final AtomicReference<String> out = new AtomicReference<>();
         final CountDownLatch l = new CountDownLatch(1);
         setOverlayVisible(false);
-        sleep(120);
+        sleep(60);
         try {
             Executor ex = r -> new Thread(r).start();
             takeScreenshot(Display.DEFAULT_DISPLAY, ex, new TakeScreenshotCallback() {
@@ -991,84 +994,152 @@ public class AgentService extends AccessibilityService {
         if (card != null) return;
         card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(18), dp(14), dp(18), dp(14));
+        card.setPadding(dp(12), dp(8), dp(12), dp(8));
         GradientDrawable g = new GradientDrawable();
-        g.setColor(Color.parseColor("#F21B1D26")); g.setCornerRadius(dp(26));
+        g.setColor(Color.parseColor("#F21B1D26")); g.setCornerRadius(dp(24));
         card.setBackground(g);
         card.setElevation(dp(8));
+
+        // ---- header (always visible): spinner · short status · expand chevron · Stop ----
+        header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        spinner = new android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleSmall);
+        spinner.setIndeterminate(true);
+        LinearLayout.LayoutParams splp = new LinearLayout.LayoutParams(dp(18), dp(18));
+        splp.rightMargin = dp(8);
+        header.addView(spinner, splp);
+        tStatus = new TextView(this);
+        tStatus.setTextColor(Color.parseColor("#E3E2EC")); tStatus.setTextSize(13.5f);
+        tStatus.setSingleLine(true); tStatus.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        tStatus.setText("Atlas");
+        LinearLayout.LayoutParams stlp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        stlp.rightMargin = dp(6);
+        header.addView(tStatus, stlp);
+        chevron = new TextView(this);
+        chevron.setText("\u25BE"); chevron.setTextColor(Color.parseColor("#B4C5FF")); chevron.setTextSize(14);
+        chevron.setPadding(dp(8), dp(4), dp(8), dp(4));
+        chevron.setOnClickListener(v -> toggleExpand());
+        header.addView(chevron);
+        sStop = new TextView(this);
+        sStop.setText("Stop"); sStop.setTextColor(Color.parseColor("#FFB4AB")); sStop.setTextSize(13);
+        sStop.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
+        GradientDrawable sg = new GradientDrawable(); sg.setColor(Color.parseColor("#3A2A2E")); sg.setCornerRadius(dp(999));
+        sStop.setBackground(sg); sStop.setPadding(dp(14), dp(6), dp(14), dp(6));
+        sStop.setOnClickListener(v -> { stop = true; answer("stop"); });
+        LinearLayout.LayoutParams sslp = new LinearLayout.LayoutParams(-2, -2); sslp.leftMargin = dp(8);
+        header.addView(sStop, sslp);
+        card.addView(header);
+
+        // ---- body (shown only when expanded or when input/confirm is needed) ----
+        body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
         tTitle = new TextView(this); tTitle.setTextColor(Color.parseColor("#B4C5FF")); tTitle.setTextSize(12);
+        tTitle.setPadding(0, dp(8), 0, 0);
         tTitle.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
         tBody = new TextView(this); tBody.setTextColor(Color.parseColor("#E3E2EC")); tBody.setTextSize(14.5f); tBody.setPadding(0, dp(4), 0, 0);
-        tBody.setMaxLines(9);
+        tBody.setMaxLines(8);
         input = new EditText(this);
         input.setTextColor(Color.WHITE); input.setHintTextColor(Color.parseColor("#8F909A")); input.setHint("Type your answer");
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         GradientDrawable ig = new GradientDrawable(); ig.setColor(Color.parseColor("#33343F")); ig.setCornerRadius(dp(16)); input.setBackground(ig);
         input.setPadding(dp(14), dp(10), dp(14), dp(10));
         LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        ilp.topMargin = dp(10);
-        input.setLayoutParams(ilp);
-        input.setVisibility(View.GONE);
+        ilp.topMargin = dp(10); input.setLayoutParams(ilp); input.setVisibility(View.GONE);
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL); row.setGravity(Gravity.END);
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        rlp.topMargin = dp(10);
-        row.setLayoutParams(rlp);
+        rlp.topMargin = dp(10); row.setLayoutParams(rlp);
         bB = pill("Stop", Color.parseColor("#33343F"), Color.parseColor("#E3E2EC"));
         bA = pill("Confirm", Color.parseColor("#B4C5FF"), Color.parseColor("#1A2C60"));
-        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        blp.leftMargin = dp(8);
-        row.addView(bB, blp);
-        row.addView(bA, new LinearLayout.LayoutParams(blp));
-        card.addView(tTitle); card.addView(tBody); card.addView(input); card.addView(row);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-2, -2); blp.leftMargin = dp(8);
+        row.addView(bB, blp); row.addView(bA, new LinearLayout.LayoutParams(blp));
         bB.setOnClickListener(v -> { stop = true; answer("stop"); });
-        lp = new WindowManager.LayoutParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
+        body.addView(tTitle); body.addView(tBody); body.addView(input); body.addView(row);
+        body.setVisibility(View.GONE);
+        card.addView(body);
+
+        // tap the status text to expand/collapse; drag the header to move the pill
+        tStatus.setOnClickListener(v -> toggleExpand());
+        attachDrag(header);
+
+        lp = new WindowManager.LayoutParams(WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
                 PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.TOP;
-        lp.horizontalMargin = 0;
-        lp.y = dp(36);
-        card.setOnClickListener(v -> { if (!busy) { openAtlas(); hideOverlay(); } });
+        lp.gravity = Gravity.TOP | Gravity.END;
+        lp.x = dp(10); lp.y = dp(40);
+    }
+
+    private final int[] dragStart = new int[4];
+    private boolean dragging = false;
+    private void attachDrag(View handle) {
+        handle.setOnTouchListener((v, e) -> {
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    dragStart[0] = lp.x; dragStart[1] = lp.y;
+                    dragStart[2] = (int) e.getRawX(); dragStart[3] = (int) e.getRawY();
+                    dragging = false; return false;
+                case android.view.MotionEvent.ACTION_MOVE: {
+                    int dx = (int) e.getRawX() - dragStart[2], dy = (int) e.getRawY() - dragStart[3];
+                    if (Math.abs(dx) > dp(6) || Math.abs(dy) > dp(6)) dragging = true;
+                    if (dragging) { lp.x = Math.max(0, dragStart[0] - dx); lp.y = Math.max(0, dragStart[1] + dy); updateLp(); }
+                    return dragging;
+                }
+                case android.view.MotionEvent.ACTION_UP:
+                    if (dragging) { dragging = false; return true; }
+                    return false;
+            }
+            return false;
+        });
+    }
+
+    private void toggleExpand() { if (expanded) applyMinimized(); else applyExpanded(false); }
+
+    private void applyMinimized() {
+        if (card == null) return;
+        expanded = false;
+        body.setVisibility(View.GONE);
+        input.setVisibility(View.GONE);
+        spinner.setVisibility(busy ? View.VISIBLE : View.GONE);
+        sStop.setVisibility(busy ? View.VISIBLE : View.GONE);
+        chevron.setText("\u25BE");
+        lp.width = WindowManager.LayoutParams.WRAP_CONTENT;
+        lp.gravity = Gravity.TOP | Gravity.END;
+        lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+        updateLp(); hideKeyboard();
+    }
+
+    private void applyExpanded(boolean focusable) {
+        if (card == null) return;
+        expanded = true;
+        body.setVisibility(View.VISIBLE);
+        chevron.setText("\u25B4");
+        lp.width = dp(320);
+        lp.gravity = Gravity.TOP | Gravity.END;
+        lp.flags = focusable ? WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                : (WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN);
+        updateLp();
     }
 
     private void addCard() {
         if (shown) { updateLp(); return; }
-        try {
-            // margins on the sides
-            LinearLayout wrap = (LinearLayout) card.getTag();
-            if (wrap == null) {
-                wrap = new LinearLayout(this);
-                wrap.setPadding(dp(12), 0, dp(12), 0);
-                wrap.addView(card, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
-                card.setTag(wrap);
-            }
-            wm.addView(wrap, lp);
-            shown = true;
-        } catch (Exception e) { shown = false; }
+        try { wm.addView(card, lp); shown = true; } catch (Exception e) { shown = false; }
     }
 
     private void updateLp() {
-        LinearLayout wrap = card == null ? null : (LinearLayout) card.getTag();
-        if (wrap != null && shown) try { wm.updateViewLayout(wrap, lp); } catch (Exception ignored) { }
+        if (card != null && shown) try { wm.updateViewLayout(card, lp); } catch (Exception ignored) { }
     }
 
-    private void showOverlay(String title, String body) { ui.post(() -> { buildOverlay(); compact(); tTitle.setText(title); tBody.setText(body); addCard(); }); }
-    private void status(String title, String body) { ui.post(() -> { if (card == null) return; tTitle.setText(title); tBody.setText(body); }); }
+    private void showOverlay(String title, String body) { ui.post(() -> { buildOverlay(); tStatus.setText(body); applyMinimized(); addCard(); }); }
+    // status() updates the compact one-line label (and the expanded body text), staying minimized.
+    private void status(String title, String bodyText) { ui.post(() -> { if (card == null) return; tStatus.setText(bodyText); tTitle.setText(title); tBody.setText(bodyText); }); }
 
-    private void compact() {
-        if (card == null) return;
-        input.setVisibility(View.GONE);
-        bA.setVisibility(View.GONE);
-        bB.setText("Stop");
-        bB.setOnClickListener(v -> { stop = true; answer("stop"); });
-        lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
-        updateLp();
-        hideKeyboard();
-    }
+    private void compact() { ui.post(this::applyMinimized); }
 
     private void showConfirm(String title, String summary) {
         buildOverlay(); addCard();
+        tStatus.setText("Needs your OK");
         tTitle.setText(title + " · needs your OK");
         tBody.setText(summary);
         input.setVisibility(View.GONE);
@@ -1076,10 +1147,12 @@ public class AgentService extends AccessibilityService {
         bA.setOnClickListener(v -> answer("confirm"));
         bB.setText("Cancel");
         bB.setOnClickListener(v -> answer("cancel"));
+        applyExpanded(false);
     }
 
     private void showAsk(String title, String question) {
         buildOverlay(); addCard();
+        tStatus.setText("Question");
         tTitle.setText(title + " · question");
         tBody.setText(question);
         input.setText("");
@@ -1088,8 +1161,7 @@ public class AgentService extends AccessibilityService {
         bA.setOnClickListener(v -> { String t = input.getText().toString().trim(); if (!t.isEmpty()) answer(t); });
         bB.setText("Stop");
         bB.setOnClickListener(v -> { stop = true; answer("stop"); });
-        lp.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN; // focusable so the keyboard can type here
-        updateLp();
+        applyExpanded(true);
         input.requestFocus();
         ui.postDelayed(() -> {
             InputMethodManager im = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
@@ -1103,29 +1175,32 @@ public class AgentService extends AccessibilityService {
 
     private void setOverlayVisible(boolean v) {
         final CountDownLatch l = new CountDownLatch(1);
-        ui.post(() -> { LinearLayout w = card == null ? null : (LinearLayout) card.getTag(); if (w != null) w.setVisibility(v ? View.VISIBLE : View.INVISIBLE); l.countDown(); });
+        ui.post(() -> { if (card != null) card.setVisibility(v ? View.VISIBLE : View.INVISIBLE); l.countDown(); });
         try { l.await(500, TimeUnit.MILLISECONDS); } catch (InterruptedException ignored) { }
     }
 
     private void finishOverlay(String msg) {
         ui.post(() -> {
             if (card == null) return;
-            compact();
+            spinner.setVisibility(View.GONE);
+            sStop.setVisibility(View.GONE);
+            tStatus.setText(msg.length() > 40 ? msg.substring(0, 39) + "\u2026" : msg);
             tTitle.setText("Atlas");
             tBody.setText(msg);
+            input.setVisibility(View.GONE);
             bA.setVisibility(View.VISIBLE); bA.setText("Open Atlas");
             bA.setOnClickListener(v -> { openAtlas(); hideOverlay(); });
             bB.setText("Close");
             bB.setOnClickListener(v -> hideOverlay());
+            applyExpanded(false);
         });
-        ui.postDelayed(() -> { if (!busy) hideOverlay(); }, 12000);
+        ui.postDelayed(() -> { if (!busy) hideOverlay(); }, 9000);
     }
 
     private void hideOverlay() {
         if (ui == null) return;
         ui.post(() -> {
-            LinearLayout w = card == null ? null : (LinearLayout) card.getTag();
-            if (w != null && shown) try { wm.removeView(w); } catch (Exception ignored) { }
+            if (card != null && shown) try { wm.removeView(card); } catch (Exception ignored) { }
             shown = false;
         });
     }
