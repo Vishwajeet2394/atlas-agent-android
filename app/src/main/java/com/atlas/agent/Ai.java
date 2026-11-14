@@ -29,7 +29,47 @@ final class Ai {
     static final ThreadLocal<Integer> READ_TIMEOUT = new ThreadLocal<>();
     static final ThreadLocal<Boolean> DEEP = new ThreadLocal<>();
 
-    static SharedPreferences prefs(Context c) { return c.getSharedPreferences("atlas", Context.MODE_PRIVATE); }
+    private static volatile SharedPreferences PREFS;
+
+    /**
+     * App settings, including the API keys. Stored in an EncryptedSharedPreferences file (AES-256, key held in the
+     * hardware-backed Android Keystore), so the keys are not readable at rest even if the phone's storage is dumped.
+     * Falls back to normal private prefs only if the secure store can't be created, so the app never bricks.
+     */
+    static SharedPreferences prefs(Context c) {
+        SharedPreferences p = PREFS;
+        if (p != null) return p;
+        synchronized (Ai.class) {
+            if (PREFS != null) return PREFS;
+            Context app = c.getApplicationContext();
+            try {
+                androidx.security.crypto.MasterKey key = new androidx.security.crypto.MasterKey.Builder(app)
+                        .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM).build();
+                SharedPreferences enc = androidx.security.crypto.EncryptedSharedPreferences.create(
+                        app, "atlas_secure", key,
+                        androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                        androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM);
+                SharedPreferences old = app.getSharedPreferences("atlas", Context.MODE_PRIVATE);
+                if (!enc.getBoolean("_migrated", false) && !old.getAll().isEmpty()) {
+                    SharedPreferences.Editor e = enc.edit();
+                    for (java.util.Map.Entry<String, ?> en : old.getAll().entrySet()) {
+                        Object v = en.getValue();
+                        if (v instanceof String) e.putString(en.getKey(), (String) v);
+                        else if (v instanceof Boolean) e.putBoolean(en.getKey(), (Boolean) v);
+                        else if (v instanceof Integer) e.putInt(en.getKey(), (Integer) v);
+                        else if (v instanceof Long) e.putLong(en.getKey(), (Long) v);
+                        else if (v instanceof Float) e.putFloat(en.getKey(), (Float) v);
+                    }
+                    e.putBoolean("_migrated", true).apply();
+                    old.edit().clear().apply(); // remove the plaintext copy
+                }
+                PREFS = enc;
+            } catch (Exception e) {
+                PREFS = app.getSharedPreferences("atlas", Context.MODE_PRIVATE);
+            }
+            return PREFS;
+        }
+    }
 
     static String provider(Context c) { return prefs(c).getString("provider", "gemini"); }
 

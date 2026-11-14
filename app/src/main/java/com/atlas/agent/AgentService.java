@@ -125,6 +125,19 @@ public class AgentService extends AccessibilityService {
     /** Called when Atlas comes to the front: the "Done" card is no longer needed. */
     static void hideIfIdle() { AgentService s = I; if (s != null && !busy) s.hideOverlay(); }
     static void requestStop() { stop = true; AgentService s = I; if (s != null) s.answer("stop"); }
+
+    /**
+     * Fully switch the accessibility service off. Banking/payment apps (CRED, SBI Uno, many UPI apps) refuse to run
+     * while any app holds an active screen-reading/gesture accessibility service, so this lets the user take Atlas
+     * out of the way completely. This genuinely removes the capability — it is not a way to hide an active service.
+     * Android does not allow an app to switch its own accessibility service back on, so re-enabling is done in Settings.
+     */
+    static boolean pause() {
+        AgentService s = I;
+        if (s == null) return false;
+        if (busy) { requestStop(); try { Thread.sleep(400); } catch (InterruptedException ignored) { } }
+        try { s.hideOverlay(); s.disableSelf(); return true; } catch (Exception e) { return false; }
+    }
     static String log() { synchronized (LOG) { return LOG.toString(); } }
 
     private static void event(String type, String text, JSONObject extra) {
@@ -161,7 +174,9 @@ public class AgentService extends AccessibilityService {
             } finally {
                 busy = false;
                 event("idle", stop ? "Stopped" : "All tasks finished", null);
-                s.finishOverlay(stop ? "Stopped." : "Done — tap to go back to Atlas.");
+                boolean autoOff = Ai.prefs(s).getBoolean("auto_off_after_errand", false);
+                s.finishOverlay(stop ? "Stopped." : autoOff ? "Done. Agent switched off so your banking apps work." : "Done — tap to go back to Atlas.");
+                if (autoOff) { try { Thread.sleep(600); } catch (InterruptedException ignored) { } try { s.disableSelf(); } catch (Exception ignored) { } }
             }
         }, "atlas-agent").start();
         return true;
@@ -831,40 +846,87 @@ public class AgentService extends AccessibilityService {
     }
 
     private boolean type(Node x, String text) {
-        AccessibilityNodeInfo target = null;
-        if (x != null && x.n.isEditable()) target = x.n;
-        else if (x != null) tap(x);
-        // search bars in food/grocery apps are often fake buttons that open a new screen with the real field
-        for (int i = 0; target == null && i < 12; i++) {
-            sleep(200);
-            AccessibilityNodeInfo r = appRoot();
-            if (r == null) continue;
-            target = r.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
-            if (target == null || !target.isEditable()) target = firstEditable(r, 0);
+        if (text == null) text = "";
+        // 1) Get onto the real input. A "search bar" on Swiggy/Zomato/Instamart is usually a decoy button that
+        //    opens a NEW screen with the actual field, so tap it and wait for an editable field to appear there.
+        AccessibilityNodeInfo target = resolveField(x);
+        if (target == null) { trace("   type: no editable field found"); return false; }
+        if (!target.isFocused()) {
+            target.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+            Rect b = new Rect(); target.getBoundsInScreen(b);
+            if (!target.performAction(AccessibilityNodeInfo.ACTION_CLICK) && b.width() > 0) gestureTap(b.centerX(), b.centerY(), 50);
+            sleep(300);
+            target.refresh();
         }
-        if (target == null) return false;
-        if (!target.isFocused()) { target.performAction(AccessibilityNodeInfo.ACTION_FOCUS); target.performAction(AccessibilityNodeInfo.ACTION_CLICK); sleep(250); }
+        // 2) Clear whatever is already there (selection + empty set_text).
+        String existing = clean(target.getText());
+        if (!existing.isEmpty() && !existing.equals(hintOf(target))) {
+            selectAll(target, existing.length());
+            Bundle empty = new Bundle();
+            empty.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "");
+            target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, empty);
+            sleep(120); target.refresh();
+        }
+        // 3) PASTE FIRST. Paste commits through the input connection, so React Native / Flutter / Compose search
+        //    fields actually fire their onChange and load suggestions — ACTION_SET_TEXT frequently does not, which
+        //    is why the log showed the text but the app never searched.
+        boolean landed = pasteInto(target, text);
+        if (landed) { trace("   type: pasted \"" + text + "\""); return true; }
+        // 4) Fallback: ACTION_SET_TEXT.
         Bundle args = new Bundle();
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
         boolean ok = target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
-        sleep(250);
-        target.refresh();
-        String now = clean(target.getText());
-        if (ok && now.contains(text.trim())) return true;
-        // fall back to paste
+        sleep(250); target.refresh();
+        boolean has = clean(target.getText()).contains(text.trim());
+        // Nudge watchers that ignore set_text: move the caret to the end so some RN fields re-emit.
+        if (ok && has) { selectAll(target, text.length()); setSelectionEnd(target, text.length()); }
+        trace("   type: set_text ok=" + ok + " present=" + has);
+        return ok && has;
+    }
+
+    /** Find the real editable field, waiting out the decoy-search-bar screen transition. */
+    private AccessibilityNodeInfo resolveField(Node x) {
+        if (x != null && x.n.isEditable() && x.n.isVisibleToUser()) return x.n;
+        if (x != null) { tap(x); sleep(350); } // a decoy search box: tap to open the real search screen
+        for (int i = 0; i < 16; i++) {
+            AccessibilityNodeInfo r = appRoot();
+            if (r != null) {
+                AccessibilityNodeInfo f = r.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
+                if (f != null && f.isEditable() && f.isVisibleToUser()) return f;
+                AccessibilityNodeInfo e = firstEditable(r, 0);
+                if (e != null) return e;
+            }
+            sleep(180);
+        }
+        return null;
+    }
+
+    private String hintOf(AccessibilityNodeInfo n) { try { return clean(n.getHintText()); } catch (Exception e) { return ""; } }
+
+    private void selectAll(AccessibilityNodeInfo n, int len) {
+        Bundle sel = new Bundle();
+        sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0);
+        sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, Math.max(0, len));
+        n.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, sel);
+    }
+    private void setSelectionEnd(AccessibilityNodeInfo n, int pos) {
+        Bundle sel = new Bundle();
+        sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, pos);
+        sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, pos);
+        n.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, sel);
+    }
+
+    private boolean pasteInto(AccessibilityNodeInfo target, String text) {
         try {
             ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             final CountDownLatch l = new CountDownLatch(1);
-            ui.post(() -> { cm.setPrimaryClip(ClipData.newPlainText("atlas", text)); l.countDown(); });
+            ui.post(() -> { try { cm.setPrimaryClip(ClipData.newPlainText("atlas", text)); } catch (Exception ignored) { } l.countDown(); });
             l.await(1, TimeUnit.SECONDS);
-            Bundle sel = new Bundle();
-            sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, 0);
-            sel.putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, now.length());
-            target.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, sel);
+            setSelectionEnd(target, clean(target.getText()).length());
             boolean p = target.performAction(AccessibilityNodeInfo.ACTION_PASTE);
-            sleep(250); target.refresh();
-            return p || clean(target.getText()).contains(text.trim());
-        } catch (Exception e) { return ok; }
+            sleep(300); target.refresh();
+            return clean(target.getText()).contains(text.trim());
+        } catch (Exception e) { return false; }
     }
 
     private AccessibilityNodeInfo firstEditable(AccessibilityNodeInfo n, int d) {

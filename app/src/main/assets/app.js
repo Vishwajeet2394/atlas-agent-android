@@ -319,8 +319,11 @@ function cardHtml(m, c, i) {
   }
   if (c.kind === "tasks") {
     const running = S.run && S.run.msgId === m.id && N.agentBusy();
-    return `<div class="rc"><div class="hd"><span class="ic">${ic("bolt", "s")}</span><b>${c.tasks.length > 1 ? c.tasks.length + " errands" : "Errand"}</b>${running ? `<button class="btn danger sm" data-a="stopAgent">${ic("stop", "s")} Stop</button>` : c.state === "ready" ? "" : `<span class="badge">${esc(c.state || "")}</span>`}</div>
-      ${c.tasks.map((t, j) => `<div class="card tight" style="margin:8px 0 0"><div class="row nowrap"><span class="badge pri">${esc(appName(t.app))}</span><div class="grow t2" style="color:var(--on-surface)">${esc(t.goal)}</div>${statusBadge(t.status)}</div>${(t.steps || []).length ? `<ul class="steps">${t.steps.slice(-30).map((s, k, a) => `<li class="${s.c || ""}${k === a.length - 1 && t.status === "running" ? " last" : ""}">${esc(s.t)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
+    const live = running ? (() => { const t = c.tasks.find(x => x.status === "running") || c.tasks[0]; const st = (t.steps || []).slice(-1)[0]; return st ? st.t : "Working…"; })() : "";
+    return `<div class="rc${running ? " rc-live" : ""}">
+      ${running ? `<div class="agentbar"><span class="orb"><i></i><i></i><i></i></span><div class="grow"><b>Atlas is working</b><div class="now">${esc(live)}</div></div><button class="iconbtn" data-a="stopAgent" aria-label="Stop" style="background:color-mix(in srgb,var(--error) 18%,transparent);color:var(--error)">${ic("stop", "s")}</button></div>`
+        : `<div class="hd"><span class="ic">${ic("bolt", "s")}</span><b>${c.tasks.length > 1 ? c.tasks.length + " errands" : "Errand"}</b>${c.state === "ready" ? "" : `<span class="badge ${c.tasks.every(t => t.status === "done") ? "ok" : ""}">${esc(c.state || "")}</span>`}</div>`}
+      ${c.tasks.map((t, j) => `<div class="card tight tcard ${t.status || ""}" style="margin:8px 0 0"><div class="row nowrap"><span class="badge pri">${esc(appName(t.app))}</span><div class="grow t2" style="color:var(--on-surface)">${esc(t.goal)}</div>${statusBadge(t.status)}</div>${(t.steps || []).length ? `<ul class="steps">${t.steps.slice(-30).map((s, k, a) => `<li class="${s.c || ""}${k === a.length - 1 && t.status === "running" ? " last" : ""}">${esc(s.t)}</li>`).join("")}</ul>` : ""}</div>`).join("")}
       ${c.state === "ready" ? `<div class="row end" style="margin-top:12px"><button class="btn ghost sm" data-a="taskEdit" ${ref}>Edit</button><button class="btn primary sm" data-a="taskStart" ${ref}>${ic("bolt", "s")} Start</button></div>` : ""}
       ${c.state === "ended" ? `<div class="row end" style="margin-top:10px"><button class="btn sm" data-a="taskStart" ${ref}>${ic("undo", "s")} Run again</button></div>` : ""}</div>`;
   }
@@ -394,12 +397,13 @@ function history(n = 10) {
   while (out.length && out[0].role !== "user") out.shift();
   return out;
 }
-let appsCache = null;
+let appsCache = null, allAppsCache = null;
 function installedApps() { if (!appsCache) appsCache = J(N.apps(), []); return appsCache; }
+function allAppNames() { if (!allAppsCache) { try { allAppsCache = J(N.allApps(), []); } catch (e) { allAppsCache = []; } } return allAppsCache; }
 async function route(text, files) {
   const p = PREF();
   const apps = installedApps().map(a => a.key + " (" + a.label + ")").join(", ") || "unknown";
-  let all = []; try { all = J(N.allApps(), []); } catch (e) { }
+  const all = allAppNames();
   const sys = `You are Atlas, an AI assistant built into the user's Android phone in India. Today is ${new Date().toLocaleString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "numeric", minute: "2-digit" })}.
 ${p.user_name ? "The user's name is " + p.user_name + "." : ""}${p.user_email ? " Their email is " + p.user_email + "." : ""}${p.user_home ? " Home address: " + p.user_home + "." : ""}${p.user_work ? " Work address: " + p.user_work + "." : ""}
 You can: search and read every file on the phone (images, PDFs, documents), organise folders, draft and send emails, and operate apps for the user through a phone agent (it taps and types inside the real apps and always asks the user before booking, paying, ordering or sending).
@@ -911,11 +915,14 @@ function viewSettings() {
   return `<div class="top"><div class="grow"><h1>Settings</h1><div class="sub">Atlas ${esc(N.version())}</div></div></div>
   <h2>AI provider</h2><div class="card">
     <div class="seg"><button data-a="prov" data-k="gemini" aria-pressed="${prov === "gemini"}">Google Gemini</button><button data-a="prov" data-k="claude" aria-pressed="${prov === "claude"}">Claude</button></div>
-    <label class="f">Gemini API key ${prov === "gemini" ? "· in use" : ""}</label><input type="password" id="gk" data-pref="gemini_key" value="${esc(p.gemini_key || "")}" placeholder="From aistudio.google.com → Get API key" autocomplete="off">
-    <label class="f">Gemini model</label><input id="gm" data-pref="gemini_model" value="${esc(p.gemini_model || "gemini-3.8-flash")}">
-    <div class="li" style="padding:8px 2px"><div class="grow"><div class="tt">Switch models when the free limit runs out</div><div class="t2" style="white-space:normal">Each Gemini model has its own daily free allowance — Atlas moves to the next one (3.8 Flash → 3.7 Flash → Flash-Lite…) instead of stopping.${p.gemini_last_model ? " Last used: " + esc(p.gemini_last_model) + "." : ""}</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="gemini_fallback" ${p.gemini_fallback !== false ? "checked" : ""}><span></span></label></div>
-    <label class="f">Claude API key ${prov === "claude" ? "· in use" : ""}</label><input type="password" id="ck" data-pref="claude_key" value="${esc(p.claude_key || "")}" placeholder="From console.anthropic.com → API keys" autocomplete="off">
-    <label class="f">Claude model</label><input id="cm" data-pref="claude_model" value="${esc(p.claude_model || "claude-sonnet-5-5")}">
+    ${prov === "gemini" ? `
+      <label class="f">Gemini API key · in use</label><input type="password" id="gk" data-pref="gemini_key" value="${esc(p.gemini_key || "")}" placeholder="From aistudio.google.com → Get API key" autocomplete="off">
+      <label class="f">Gemini model</label><input id="gm" data-pref="gemini_model" value="${esc(p.gemini_model || "gemini-3.8-flash")}">
+      <div class="li" style="padding:8px 2px"><div class="grow"><div class="tt">Switch models when the free limit runs out</div><div class="t2" style="white-space:normal">Each Gemini model has its own daily free allowance — Atlas moves to the next one (3.8 Flash → 3.7 Flash → Flash-Lite…) instead of stopping.${p.gemini_last_model ? " Last used: " + esc(p.gemini_last_model) + "." : ""}</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="gemini_fallback" ${p.gemini_fallback !== false ? "checked" : ""}><span></span></label></div>
+    ` : `
+      <label class="f">Claude API key · in use</label><input type="password" id="ck" data-pref="claude_key" value="${esc(p.claude_key || "")}" placeholder="From console.anthropic.com → API keys" autocomplete="off">
+      <label class="f">Claude model</label><input id="cm" data-pref="claude_model" value="${esc(p.claude_model || "claude-sonnet-5-5")}">
+    `}
     <div class="row end" style="margin-top:12px"><span class="grow t2" id="testres"></span><button class="btn ghost sm" data-a="keyHelp">How to get a key</button><button class="btn tonal sm" data-a="testKey">Test</button></div>
   </div>
   <h2>Permissions</h2><div class="card tight">
@@ -937,6 +944,16 @@ function viewSettings() {
     <div class="li"><div class="grow"><div class="tt">Send screenshots to the AI</div><div class="t2" style="white-space:normal">More accurate in apps with unlabeled buttons</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="screenshots" ${p.screenshots !== false ? "checked" : ""}><span></span></label></div>
     <div class="li"><div class="grow"><div class="tt">Step limit per errand</div></div><select data-a="steps" style="width:auto">${[45, 70, 100].map(n => `<option ${+(p.max_steps || 70) === n ? "selected" : ""}>${n}</option>`).join("")}</select></div>
     <div class="li"><div class="grow"><div class="tt">Careful mode for shopping & food apps</div><div class="t2" style="white-space:normal">Sends a screenshot with every step in Swiggy, Zomato, Instamart, Amazon… so the AI sees exactly what you'd see.</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="careful" ${p.careful !== false ? "checked" : ""}><span></span></label></div>
+    <div class="li"><div class="grow"><div class="tt">Switch the agent off after each errand</div><div class="t2" style="white-space:normal">So banking apps (CRED, SBI Uno, UPI) work in between. You re-enable the agent in Settings before the next errand.</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="auto_off_after_errand" ${p.auto_off_after_errand === true ? "checked" : ""}><span></span></label></div>
+  </div>
+  <h2>Banking apps</h2><div class="card">
+    <div class="row nowrap"><div class="spark" style="width:38px;height:38px;border-radius:13px;background:var(--tertiary-c);color:var(--on-tertiary-c)">${ic("shield", "s")}</div><div class="grow t2">Apps like <b>CRED</b> and <b>SBI Uno</b> won't run while Atlas's agent is on — they block every screen-reading app, because that's how screen-scraping fraud works, and they can't tell Atlas apart. Pause the agent here when you need those apps; the agent being off is actually the safe state.</div></div>
+    <div class="row end" style="margin-top:12px">${N.agentOn() ? `<button class="btn primary sm" data-a="pauseAgent">${ic("shield", "s")} Pause agent now</button>` : `<span class="badge ok">${ic("check", "s")} Agent is off — banking apps will work</span>`}</div>
+    ${N.agentOn() ? "" : `<div class="row end" style="margin-top:8px"><button class="btn tonal sm" data-a="openA11y">Turn the agent back on</button></div>`}
+  </div>
+  <h2>Privacy & security</h2><div class="card tight">
+    <div class="li"><div class="grow"><div class="tt">Lock Atlas with fingerprint / PIN</div><div class="t2" style="white-space:normal">${N.canLock && N.canLock() ? "Ask for your fingerprint or screen lock each time Atlas opens." : "Set up a fingerprint or screen lock on your phone to use this."}</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="lock_app" ${p.lock_app === true ? "checked" : ""} ${N.canLock && N.canLock() ? "" : "disabled"}><span></span></label></div>
+    <div class="li" style="padding:10px 6px"><div class="grow t2">Your API keys are stored <b>encrypted</b> (AES-256, key held in the phone's secure hardware). File indexing is fully on-device; a file or app screen is sent to your AI provider only when an errand or question needs it.</div></div>
   </div>
   <h2>Look</h2><div class="card">
     <div class="seg">${["system", "light", "dark"].map(m => `<button data-a="theme" data-k="${m}" aria-pressed="${(p.theme || "system") === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div>
@@ -946,7 +963,7 @@ function viewSettings() {
     <div class="li" data-a="clearChat"><span class="ico">${ic("chat")}</span><div class="grow"><div class="tt">Clear chat history</div></div></div>
     <div class="li" data-a="clearAi"><span class="ico">${ic("spark")}</span><div class="grow"><div class="tt">Forget AI descriptions of files</div></div></div>
   </div>
-  <div class="hint" style="padding:6px 8px 0">Privacy: your files are indexed only on this phone. A file's contents (or the app screen while an errand runs) are sent to the AI provider you picked only when you ask. Keys are stored in the app's private storage.</div>`;
+  <div class="hint" style="padding:6px 8px 0">Privacy: files are indexed only on this phone and API keys are stored encrypted. A file's contents, or the app screen while an errand runs, are sent to your chosen AI provider only when you ask — nothing is sent to Atlas's makers.</div>`;
 }
 
 // ================================================================ events
@@ -960,6 +977,7 @@ document.addEventListener("click", async e => {
     case "newChat": S.chat = []; saveChat(); render(); break;
     case "askFiles": N.askFiles(); break;
     case "openA11y": N.openAccessibility(); break;
+    case "pauseAgent": { const ok = N.pauseAgent(); toast(ok ? "Agent paused — banking apps will work now" : "Agent is already off"); setTimeout(render, 300); break; }
     case "openAppInfo": N.openAppInfo(); break;
     case "agentHelp": openSheet(`<h3>Turning on the phone agent</h3><div style="margin:10px 0">${md("1. Tap **Turn on** — Android's Accessibility settings open.\n2. Go to **Installed apps → Atlas agent** and switch it on.\n3. If the switch is greyed out (“Restricted setting”), go back, tap **App info**, open the **⋮** menu (top right) and choose **Allow restricted settings**, then try again.\n\nAtlas only reads the screen while an errand you started is running, and asks before booking, paying or sending.")}</div><div class="row end"><button class="btn ghost" data-a="openAppInfo">App info</button><button class="btn primary" data-a="openA11y">Turn on</button></div>`); break;
     // chat cards
@@ -1027,7 +1045,7 @@ document.addEventListener("click", async e => {
     case "applyOrg": { const [m, c] = card(); if (!c) break; applyOrganize(c); saveChat(); updateMsg(m); break; }
     case "undoOrg": { const [m, c] = card(); if (!c) break; undoOrganize(c); saveChat(); updateMsg(m); break; }
     // files
-    case "rescan": toast("Rescanning…"); call("scan").then(() => { appsCache = null; if (S.tab === "files") render(); toast("Index updated"); }); setTimeout(() => S.tab === "files" && render(), 400); break;
+    case "rescan": toast("Rescanning…"); call("scan").then(() => { appsCache = null; allAppsCache = null; if (S.tab === "files") render(); toast("Index updated"); }); setTimeout(() => S.tab === "files" && render(), 400); break;
     case "fsearch": { const q = ($("#fq") || {}).value || ""; if (!q.trim()) break; S.files = { ...F, mode: "list", q: q.trim(), kind: "any", sort: "", folder: null, sel: new Set() }; loadList(); render(); break; }
     case "cat": S.files = { ...F, mode: "list", kind: el.dataset.k, q: "", sort: "", folder: null, sel: new Set() }; loadList(); render(); scrollTo(0, 0); break;
     case "fhome": S.files = { ...F, mode: "home", sel: new Set(), dupes: null }; render(); break;
@@ -1091,7 +1109,7 @@ document.addEventListener("click", async e => {
 document.addEventListener("change", e => {
   const el = e.target;
   if (el.dataset.a === "tog") setPref(el.dataset.k, el.checked ? "1" : "0");
-  if (el.dataset.a === "togb") N.setBool(el.dataset.k, el.checked);
+  if (el.dataset.a === "togb") { N.setBool(el.dataset.k, el.checked); if (el.dataset.k === "lock_app" && el.checked) toast("Atlas will lock next time you open it"); }
   if (el.dataset.a === "steps") N.setInt("max_steps", +el.value);
   if (el.dataset.a === "togRoutine") { const r = J(N.routines(), []).find(x => x.id === el.dataset.id); if (r) { r.on = el.checked; N.saveRoutine(JSON.stringify(r)); setTimeout(() => S.tab === "tasks" && render(), 200); } }
   if (el.dataset.pref) setPref(el.dataset.pref, el.value.trim());
@@ -1137,7 +1155,7 @@ window.atlasBack = () => {
   if (S.tab !== "assistant") { go("assistant"); return true; }
   return false;
 };
-window.atlasResume = () => { appsCache = null; syncRun(); if (!sheetEl && S.tab !== "assistant") render(); else if (S.tab === "assistant" && !S.chat.length) render(); else if (S.tab === "assistant") { const m = S.run && S.chat.find(x => x.id === S.run.msgId); if (m) updateMsg(m); } if (N.hasFiles() && !J(N.stats(), {}).files && !J(N.stats(), {}).scanning) call("scan").then(() => S.tab === "files" && render()); };
+window.atlasResume = () => { syncRun(); if (!sheetEl && S.tab !== "assistant") render(); else if (S.tab === "assistant" && !S.chat.length) render(); else if (S.tab === "assistant") { const m = S.run && S.chat.find(x => x.id === S.run.msgId); if (m) updateMsg(m); } if (N.hasFiles() && !J(N.stats(), {}).files && !J(N.stats(), {}).scanning) call("scan").then(() => S.tab === "files" && render()); };
 window.atlasIndexed = () => { if (S.tab === "files" && !sheetEl) render(); };
 window.atlasShared = o => { if (o.simchat != null) { go("assistant"); simRun(o.simchat); return; } if (o.tab && TABS.includes(o.tab)) { go(o.tab); return; } go("assistant"); if (o.run) { setTimeout(() => send(o.run), 300); return; } if (o.path) { S.pend = [o.path]; renderPend(); } if (o.text) { $("#q").value = o.text; autosize(); } $("#q").focus(); };
 document.addEventListener("pointerdown", e => { // long-press to start selecting in file lists
@@ -1163,7 +1181,7 @@ function mockNative() {
     .map(([p, k, s], i) => ({ p: "/storage/emulated/0/" + p, n: p.split("/").pop(), d: p.split("/").slice(0, -1).join("/"), k, s, m: now - i * 86400000 * 3, x: p.split(".").pop() }));
   return {
     prefs: () => JSON.stringify(P), setPref: (k, v) => P[k] = v, setBool: (k, v) => P[k] = v, setInt: (k, v) => P[k] = v, version: () => "preview",
-    hasFiles: () => true, askFiles() { }, agentOn: () => false, openAccessibility() { }, openAppInfo() { }, apps: () => JSON.stringify([{ key: "uber", label: "Uber" }, { key: "swiggy", label: "Swiggy" }]), allApps: () => '["Amazon","Flipkart","Uber"]',
+    hasFiles: () => true, askFiles() { }, agentOn: () => false, pauseAgent: () => true, canLock: () => true, openAccessibility() { }, openAppInfo() { }, apps: () => JSON.stringify([{ key: "uber", label: "Uber" }, { key: "swiggy", label: "Swiggy" }]), allApps: () => '["Amazon","Flipkart","Uber"]',
     setBars() { }, setCanGoBack() { }, haptic() { }, dynamicColors: () => null, voice(id) { atlasCb(id, false, "no voice"); },
     scan(id) { setTimeout(() => atlasCb(id, true, "ok"), 300); }, stats: () => JSON.stringify({ files: files.length, bytes: 1e9, kinds: { image: { n: 3, b: 4e6 }, pdf: { n: 2, b: 3e5 }, video: { n: 1, b: 9e8 }, apk: { n: 1, b: 2.2e7 }, doc: { n: 1, b: 9e4 } }, free: 180e9, cap: 512e9, analyzed: 0 }),
     search: (q, k) => { const it = files.filter(f => (!q || f.n.toLowerCase().includes(q.toLowerCase())) && (k === "any" || k === f.k || k === "todo" && (f.k === "image" || f.k === "pdf"))); return JSON.stringify({ total: it.length, bytes: it.reduce((a, b) => a + b.s, 0), items: it }); },

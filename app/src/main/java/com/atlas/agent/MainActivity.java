@@ -51,6 +51,10 @@ public class MainActivity extends Activity {
     private String permId = null;
     static volatile MainActivity instance;
     private WebView web;
+    private android.widget.FrameLayout root;
+    private View lockView;
+    private boolean unlocked = false, authInFlight = false;
+    private long backgroundedAt = 0;
     private boolean pageReady = false;
     private String pendingShared = null;
     private String voiceId = null;
@@ -78,7 +82,9 @@ public class MainActivity extends Activity {
                 .addPathHandler("/v/", p -> media(p, 1800))
                 .build();
         web = new WebView(this);
-        setContentView(web);
+        root = new android.widget.FrameLayout(this);
+        root.addView(web, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        setContentView(root);
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -89,6 +95,11 @@ public class MainActivity extends Activity {
         s.setGeolocationEnabled(false);
         s.setSupportMultipleWindows(false);
         s.setSafeBrowsingEnabled(true);
+        s.setAllowFileAccessFromFileURLs(false);
+        s.setAllowUniversalAccessFromFileURLs(false);
+        s.setSaveFormData(false);
+        s.setCacheMode(WebSettings.LOAD_DEFAULT);
+        android.webkit.CookieManager.getInstance().setAcceptCookie(false);
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         web.setLayerType(View.LAYER_TYPE_HARDWARE, null);
         s.setOffscreenPreRaster(true);
@@ -110,6 +121,8 @@ public class MainActivity extends Activity {
         handleIntent(getIntent());
         web.loadUrl("https://" + HOST + "/assets/index.html");
         Routines.reschedule(this);
+        Apps.warm(this); // precompute the app list off the UI thread so the first errand doesn't stall
+        maybeLock(true);
         if (hasFiles()) FileIndex.get(this).scan(() -> runJs("window.atlasIndexed&&atlasIndexed()"));
     }
 
@@ -220,7 +233,8 @@ public class MainActivity extends Activity {
 
     private boolean hasFiles() { return Environment.isExternalStorageManager(); }
 
-    @Override protected void onResume() { super.onResume(); AgentService.hideIfIdle(); if (pageReady) runJs("window.atlasResume&&atlasResume()"); }
+    @Override protected void onResume() { super.onResume(); AgentService.hideIfIdle(); maybeLock(false); if (pageReady) runJs("window.atlasResume&&atlasResume()"); }
+    @Override protected void onStop() { super.onStop(); backgroundedAt = android.os.SystemClock.elapsedRealtime(); }
 
     @Override protected void onDestroy() { if (instance == this) instance = null; super.onDestroy(); }
 
@@ -285,6 +299,69 @@ public class MainActivity extends Activity {
     }
     interface Job { String run() throws Exception; }
 
+    // ---------------- app lock (optional biometric / device-credential gate) ----------------
+    boolean lockEnabled() { return !BuildConfig.SIM && Ai.prefs(this).getBoolean("lock_app", false) && biometricAvailable(); }
+
+    boolean biometricAvailable() {
+        try {
+            android.hardware.biometrics.BiometricManager bm = getSystemService(android.hardware.biometrics.BiometricManager.class);
+            int ok = bm.canAuthenticate(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK
+                    | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+            return ok == android.hardware.biometrics.BiometricManager.BIOMETRIC_SUCCESS;
+        } catch (Exception e) { return false; }
+    }
+
+    private void maybeLock(boolean cold) {
+        if (!lockEnabled()) { unlocked = true; return; }
+        boolean reLock = !cold && backgroundedAt > 0 && android.os.SystemClock.elapsedRealtime() - backgroundedAt > 30_000;
+        if (authInFlight) return;
+        if (!cold && !reLock && unlocked) return;
+        unlocked = false;
+        showLockCover();
+        promptAuth();
+    }
+
+    private void showLockCover() {
+        if (lockView != null) return;
+        View v = new View(this);
+        v.setBackgroundColor(0xFF111318);
+        v.setClickable(true);
+        root.addView(v, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        lockView = v;
+        if (web != null) web.setVisibility(View.INVISIBLE);
+    }
+    private void hideLockCover() {
+        if (lockView != null) { root.removeView(lockView); lockView = null; }
+        if (web != null) web.setVisibility(View.VISIBLE);
+    }
+
+    private void promptAuth() {
+        if (authInFlight) return;
+        authInFlight = true;
+        try {
+            android.hardware.biometrics.BiometricPrompt prompt = new android.hardware.biometrics.BiometricPrompt.Builder(this)
+                    .setTitle("Unlock Atlas")
+                    .setDescription("Atlas is locked. Verify it's you to continue.")
+                    .setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK
+                            | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL)
+                    .build();
+            prompt.authenticate(new android.os.CancellationSignal(), getMainExecutor(),
+                    new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                        @Override public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult r) {
+                            authInFlight = false; unlocked = true; hideLockCover();
+                        }
+                        @Override public void onAuthenticationError(int code, CharSequence err) {
+                            authInFlight = false;
+                            // user cancelled or too many attempts: leave the app; do not expose the UI
+                            if (code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED
+                                    || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON
+                                    || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_CANCELED) finishAndRemoveTask();
+                            else runJs("");
+                        }
+                    });
+        } catch (Exception e) { authInFlight = false; unlocked = true; hideLockCover(); }
+    }
+
     class Bridge {
         // ---------- settings ----------
         @JavascriptInterface public String prefs() {
@@ -309,6 +386,8 @@ public class MainActivity extends Activity {
             });
         }
         @JavascriptInterface public boolean agentOn() { return AgentService.on(); }
+        @JavascriptInterface public boolean pauseAgent() { return AgentService.pause(); }
+        @JavascriptInterface public boolean canLock() { return biometricAvailable(); }
         @JavascriptInterface public void openAccessibility() {
             runOnUiThread(() -> {
                 Intent i = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);

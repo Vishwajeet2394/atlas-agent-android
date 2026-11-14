@@ -107,8 +107,19 @@ final class Apps {
         try { c.startActivity(i); return true; } catch (Exception e) { return false; }
     }
 
-    /** Names of every app with a launcher icon (so the AI can pick any of them). */
+    // Enumerating every launcher app and loading its label is slow (hundreds of ms to seconds), so cache it
+    // for the session and let MainActivity warm it once in the background at startup.
+    private static volatile String allLabelsCache, installedCache;
+
+    static void warm(Context c) {
+        new Thread(() -> { try { allLabels(c); installedJson(c); } catch (Exception ignored) { } }, "atlas-apps-warm").start();
+    }
+    static void invalidate() { allLabelsCache = null; installedCache = null; }
+
+    /** Names of every app with a launcher icon (so the AI can pick any of them). Cached. */
     static String allLabels(Context c) {
+        String cached = allLabelsCache;
+        if (cached != null) return cached;
         PackageManager pm = c.getPackageManager();
         Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         JSONArray out = new JSONArray();
@@ -118,11 +129,14 @@ final class Apps {
             seen.add(String.valueOf(r.loadLabel(pm)));
         }
         for (String l : seen) out.put(l);
-        return out.toString();
+        allLabelsCache = out.toString();
+        return allLabelsCache;
     }
 
-    /** Which of the known apps are on this phone. */
+    /** Which of the known apps are on this phone. Cached. */
     static String installedJson(Context c) {
+        String cached = installedCache;
+        if (cached != null) return cached;
         JSONArray out = new JSONArray();
         for (Map.Entry<String, String[]> e : KNOWN.entrySet()) {
             for (String p : e.getValue()) {
@@ -132,6 +146,7 @@ final class Apps {
                 }
             }
         }
-        return out.toString();
+        installedCache = out.toString();
+        return installedCache;
     }
 }
