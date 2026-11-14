@@ -352,11 +352,8 @@ public class MainActivity extends Activity {
                         }
                         @Override public void onAuthenticationError(int code, CharSequence err) {
                             authInFlight = false;
-                            // user cancelled or too many attempts: leave the app; do not expose the UI
-                            if (code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED
-                                    || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON
-                                    || code == android.hardware.biometrics.BiometricPrompt.BIOMETRIC_ERROR_CANCELED) finishAndRemoveTask();
-                            else runJs("");
+                            // cancelled, locked out, or any failure: close Atlas rather than expose the UI. Reopening re-prompts.
+                            finishAndRemoveTask();
                         }
                     });
         } catch (Exception e) { authInFlight = false; unlocked = true; hideLockCover(); }
