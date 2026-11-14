@@ -1,0 +1,6 @@
+--------- beginning of main
+11-14 10:37:45.398  2227  2622 I AtlasAgent: task: TAP:Network
+11-14 10:37:48.180  2227  2622 I AtlasAgent: step: found network
+11-14 10:37:49.747  2227  2622 I AtlasAgent: step: tapped the target
+11-14 10:37:49.747  2227  2622 I AtlasAgent: done: Self-test passed: opened network
+11-14 10:37:51.550  2227  2622 I AtlasAgent: idle: All tasks finished
