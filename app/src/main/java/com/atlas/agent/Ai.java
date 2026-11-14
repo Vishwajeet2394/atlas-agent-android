@@ -287,7 +287,7 @@ final class Ai {
         HttpURLConnection h = (HttpURLConnection) new URL(url).openConnection();
         // hard deadline for the whole call: servers can keep a slow reply alive with whitespace, so a read timeout alone never fires
         Integer rt = READ_TIMEOUT.get();
-        long deadline = rt == null ? (DEEP.get() != null && DEEP.get() ? 90_000 : 40_000) : Math.max(20_000, rt - 10_000);
+        long deadline = rt == null ? (DEEP.get() != null && DEEP.get() ? 75_000 : 22_000) : Math.max(15_000, rt - 10_000);
         final boolean[] killed = {false};
         java.util.concurrent.ScheduledFuture<?> watchdog = WATCHDOG.schedule(() -> { killed[0] = true; try { h.disconnect(); } catch (Exception ignored) { } }, deadline, java.util.concurrent.TimeUnit.MILLISECONDS);
         try {

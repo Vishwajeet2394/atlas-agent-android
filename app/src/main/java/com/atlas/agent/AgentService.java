@@ -161,7 +161,7 @@ public class AgentService extends AccessibilityService {
         stop = false; busy = true;
         try (java.io.FileWriter w = new java.io.FileWriter(traceFile(s), false)) { w.write("Atlas errand log · " + new java.util.Date() + " · provider " + Ai.provider(s) + "\n"); } catch (Exception ignored) { }
         new Thread(() -> {
-            Ai.READ_TIMEOUT.set(45000);
+            Ai.READ_TIMEOUT.set(30000);
             try {
                 for (int i = 0; i < tasks.length() && !stop; i++) {
                     JSONObject t = tasks.optJSONObject(i);
@@ -881,27 +881,45 @@ public class AgentService extends AccessibilityService {
         boolean ok = target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
         sleep(250); target.refresh();
         boolean has = clean(target.getText()).contains(text.trim());
-        // Nudge watchers that ignore set_text: move the caret to the end so some RN fields re-emit.
-        if (ok && has) { selectAll(target, text.length()); setSelectionEnd(target, text.length()); }
+        if (ok && has) {
+            // Nudge watchers that ignore a bulk set_text: rebuild the text one character at a time so fields that
+            // only listen for incremental input (some React Native search bars) actually fire their onChange.
+            Bundle clr = new Bundle();
+            clr.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "");
+            target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, clr);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < text.length(); i++) {
+                sb.append(text.charAt(i));
+                Bundle b2 = new Bundle();
+                b2.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, sb.toString());
+                target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b2);
+                setSelectionEnd(target, sb.length());
+                sleep(45);
+            }
+            sleep(200); target.refresh();
+            trace("   type: set_text + per-char nudge, present=" + clean(target.getText()).contains(text.trim()));
+            return clean(target.getText()).contains(text.trim());
+        }
         trace("   type: set_text ok=" + ok + " present=" + has);
         return ok && has;
     }
 
-    /** Find the real editable field, waiting out the decoy-search-bar screen transition. */
+    /** Find the REAL editable field. Many apps' home "search bar" is a decoy that opens a separate search screen,
+     *  so always tap the entry first, then prefer the field that is actually focused (the live search box). */
     private AccessibilityNodeInfo resolveField(Node x) {
-        if (x != null && x.n.isEditable() && x.n.isVisibleToUser()) return x.n;
-        if (x != null) { tap(x); sleep(350); } // a decoy search box: tap to open the real search screen
-        for (int i = 0; i < 16; i++) {
+        if (x != null) { tap(x); sleep(500); } // decoy → opens the real search screen; a real field just keeps focus
+        for (int i = 0; i < 18; i++) {
             AccessibilityNodeInfo r = appRoot();
             if (r != null) {
                 AccessibilityNodeInfo f = r.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);
-                if (f != null && f.isEditable() && f.isVisibleToUser()) return f;
-                AccessibilityNodeInfo e = firstEditable(r, 0);
-                if (e != null) return e;
+                if (f != null && f.isEditable() && f.isVisibleToUser()) return f; // the live, focused search field
             }
-            sleep(180);
+            sleep(150);
         }
-        return null;
+        // nothing focused: fall back to the first visible editable, then to x itself
+        AccessibilityNodeInfo r = appRoot();
+        if (r != null) { AccessibilityNodeInfo e = firstEditable(r, 0); if (e != null) return e; }
+        return x != null && x.n.isEditable() ? x.n : null;
     }
 
     private String hintOf(AccessibilityNodeInfo n) { try { return clean(n.getHintText()); } catch (Exception e) { return ""; } }

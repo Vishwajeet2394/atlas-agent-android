@@ -365,7 +365,10 @@ async function send(text) {
   addMsg({ role: "user", text: text || "What's in this?", files });
   const reply = addMsg({ role: "ai", text: "", typing: true, cards: [] });
   try {
-    const r = await route(text || "Tell me what this file contains.", files);
+    const planP = route(text || "Tell me what this file contains.", files);
+    const pre = preopenApp(text, files);      // open the app immediately, in parallel with planning
+    const r = await planP;
+    if (pre) reply.preopened = pre;
     reply.typing = false; reply.text = r.say || "";
     updateMsg(reply); saveChat();
     const acts = fixToggles(Array.isArray(r.actions) ? r.actions : [], text);
@@ -400,6 +403,23 @@ function history(n = 10) {
 let appsCache = null, allAppsCache = null;
 function installedApps() { if (!appsCache) appsCache = J(N.apps(), []); return appsCache; }
 function allAppNames() { if (!allAppsCache) { try { allAppsCache = J(N.allApps(), []); } catch (e) { allAppsCache = []; } } return allAppsCache; }
+// Known app keywords → the key Apps.resolve understands. Lets us open the target app before the AI plan returns.
+const APP_KEYS = { uber: "uber", ola: "ola", rapido: "rapido", swiggy: "swiggy", instamart: "instamart", zomato: "zomato", blinkit: "blinkit", zepto: "zepto", amazon: "amazon", flipkart: "flipkart", myntra: "myntra", meesho: "meesho", ajio: "ajio", nykaa: "nykaa", jiomart: "jiomart", bigbasket: "bigbasket", dunzo: "dunzo", gmail: "gmail", whatsapp: "whatsapp", phonepe: "phonepe", paytm: "paytm", gpay: "gpay", "google pay": "gpay", bookmyshow: "bookmyshow", irctc: "irctc", redbus: "redbus", makemytrip: "makemytrip" };
+function detectApp(text) {
+  const t = " " + (text || "").toLowerCase() + " ";
+  // longest keyword first so "google pay" beats "pay"
+  const keys = Object.keys(APP_KEYS).sort((a, b) => b.length - a.length);
+  for (const k of keys) if (t.includes(" " + k) || t.includes(k + " ")) { const key = APP_KEYS[k]; if (installedApps().some(a => a.key === key)) return key; }
+  return null;
+}
+function preopenApp(text, files) {
+  if (files && files.length) return null;         // a file question isn't an errand
+  if (!N.agentOn() || !N.agentBusy || N.agentBusy()) return null; // don't yank the screen if an errand is already running
+  const key = detectApp(text);
+  if (!key) return null;
+  try { if (N.launch(key)) return key; } catch (e) { }
+  return null;
+}
 async function route(text, files) {
   const p = PREF();
   const apps = installedApps().map(a => a.key + " (" + a.label + ")").join(", ") || "unknown";
