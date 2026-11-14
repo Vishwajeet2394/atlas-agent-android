@@ -385,6 +385,15 @@ public class MainActivity extends Activity {
         @JavascriptInterface public boolean agentOn() { return AgentService.on(); }
         @JavascriptInterface public boolean pauseAgent() { return AgentService.pause(); }
         @JavascriptInterface public boolean canLock() { return biometricAvailable(); }
+        @JavascriptInterface public void openAssistantSettings() {
+            runOnUiThread(() -> {
+                try { startActivity(new Intent(Settings.ACTION_VOICE_INPUT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+                catch (Exception e) {
+                    try { startActivity(new Intent(Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+                    catch (Exception e2) { try { startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); } catch (Exception ignored) { } }
+                }
+            });
+        }
         @JavascriptInterface public void openAccessibility() {
             runOnUiThread(() -> {
                 Intent i = new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS);

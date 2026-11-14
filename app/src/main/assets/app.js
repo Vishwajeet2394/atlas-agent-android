@@ -975,6 +975,11 @@ function viewSettings() {
     <div class="li"><div class="grow"><div class="tt">Lock Atlas with fingerprint / PIN</div><div class="t2" style="white-space:normal">${N.canLock && N.canLock() ? "Ask for your fingerprint or screen lock each time Atlas opens." : "Set up a fingerprint or screen lock on your phone to use this."}</div></div><label class="switch"><input type="checkbox" data-a="togb" data-k="lock_app" ${p.lock_app === true ? "checked" : ""} ${N.canLock && N.canLock() ? "" : "disabled"}><span></span></label></div>
     <div class="li" style="padding:10px 6px"><div class="grow t2">Your API keys are stored <b>encrypted</b> (AES-256, key held in the phone's secure hardware). File indexing is fully on-device; a file or app screen is sent to your AI provider only when an errand or question needs it.</div></div>
   </div>
+  <h2>Voice</h2><div class="card">
+    <div class="row nowrap"><div class="spark" style="width:38px;height:38px;border-radius:13px">${ic("mic", "s")}</div><div class="grow t2">Tap the mic in the message bar to talk any time. For hands-free, set Atlas as your phone's <b>default assistant</b> — then your usual assistant gesture (swipe up from a bottom corner, or long-press power) opens Atlas already listening.</div></div>
+    <div class="row end" style="margin-top:12px"><button class="btn tonal sm" data-a="assistantSettings">Set Atlas as assistant</button></div>
+    <div class="t2" style="padding:6px 4px 0">A spoken always-on “Hey Atlas” wake word isn't included — Android only allows that for the system assistant, and an always-on mic would work against Atlas's privacy. The gesture above is the hands-free way.</div>
+  </div>
   <h2>Look</h2><div class="card">
     <div class="seg">${["system", "light", "dark"].map(m => `<button data-a="theme" data-k="${m}" aria-pressed="${(p.theme || "system") === m}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div>
     <div class="chips" style="margin-top:12px">${Object.entries(SEEDS).filter(([k]) => k !== "wallpaper" || sysPal).map(([k, [l, c]]) => `<button class="chip" data-a="seed" data-k="${k}" aria-pressed="${(p.seed || "wallpaper") === k}">${c ? `<span style="width:14px;height:14px;border-radius:50%;background:${c}"></span>` : ic("palette", "s")}${l}</button>`).join("")}</div>
@@ -1122,6 +1127,7 @@ document.addEventListener("click", async e => {
     }
     case "theme": setPref("theme", el.dataset.k); applyTheme(); render(); break;
     case "seed": setPref("seed", el.dataset.k); applyTheme(); render(); break;
+    case "assistantSettings": N.openAssistantSettings(); toast("Pick Atlas under Default assistant app"); break;
     case "clearChat": confirm2("Clear chat history?", "Your errands' activity log stays.", "Clear", () => { S.chat = []; saveChat(); toast("Cleared"); }, true); break;
     case "clearAi": confirm2("Forget all AI descriptions?", "Search will only use file names until files are described again.", "Forget", () => { N.clearContent(); toast("Done"); }, true); break;
   }
@@ -1163,7 +1169,8 @@ $("#q").addEventListener("input", autosize);
 $("#q").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !matchMedia("(pointer:coarse)").matches) { e.preventDefault(); send($("#q").value); } });
 $("#send").onclick = () => send($("#q").value);
 $("#attach").onclick = () => { if (!N.hasFiles()) { N.askFiles(); return; } pickFiles("Attach from your phone", l => { S.pend = [...new Set([...S.pend, ...l])].slice(0, 6); renderPend(); }); };
-$("#mic").onclick = () => { call("voice").then(t => { $("#q").value = t; autosize(); send(t); }).catch(() => { }); };
+function startVoice() { tick(); call("voice").then(t => { if (!t) return; $("#q").value = t; autosize(); send(t); }).catch(() => { }); }
+$("#mic").onclick = startVoice;
 
 // ---------- back, resume, share ----------
 function canBack() { try { N.setCanGoBack(!!sheetEl || (S.tab === "files" && S.files.mode !== "home") || S.tab !== "assistant"); } catch (e) { } }
@@ -1177,7 +1184,7 @@ window.atlasBack = () => {
 };
 window.atlasResume = () => { syncRun(); if (!sheetEl && S.tab !== "assistant") render(); else if (S.tab === "assistant" && !S.chat.length) render(); else if (S.tab === "assistant") { const m = S.run && S.chat.find(x => x.id === S.run.msgId); if (m) updateMsg(m); } if (N.hasFiles() && !J(N.stats(), {}).files && !J(N.stats(), {}).scanning) call("scan").then(() => S.tab === "files" && render()); };
 window.atlasIndexed = () => { if (S.tab === "files" && !sheetEl) render(); };
-window.atlasShared = o => { if (o.simchat != null) { go("assistant"); simRun(o.simchat); return; } if (o.tab && TABS.includes(o.tab)) { go(o.tab); return; } go("assistant"); if (o.run) { setTimeout(() => send(o.run), 300); return; } if (o.path) { S.pend = [o.path]; renderPend(); } if (o.text) { $("#q").value = o.text; autosize(); } $("#q").focus(); };
+window.atlasShared = o => { if (o.simchat != null) { go("assistant"); simRun(o.simchat); return; } if (o.assist) { go("assistant"); S.chat = []; saveChat(); render(); setTimeout(startVoice, 450); return; } if (o.tab && TABS.includes(o.tab)) { go(o.tab); return; } go("assistant"); if (o.run) { setTimeout(() => send(o.run), 300); return; } if (o.path) { S.pend = [o.path]; renderPend(); } if (o.text) { $("#q").value = o.text; autosize(); } $("#q").focus(); };
 document.addEventListener("pointerdown", e => { // long-press to start selecting in file lists
   const el = e.target.closest('.view [data-a="file"]'); if (!el || S.tab !== "files" || !["list", "browse"].includes(S.files.mode)) return;
   const x0 = e.clientX, y0 = e.clientY;
@@ -1202,7 +1209,7 @@ function mockNative() {
   return {
     prefs: () => JSON.stringify(P), setPref: (k, v) => P[k] = v, setBool: (k, v) => P[k] = v, setInt: (k, v) => P[k] = v, version: () => "preview",
     hasFiles: () => true, askFiles() { }, agentOn: () => false, pauseAgent: () => true, canLock: () => true, openAccessibility() { }, openAppInfo() { }, apps: () => JSON.stringify([{ key: "uber", label: "Uber" }, { key: "swiggy", label: "Swiggy" }]), allApps: () => '["Amazon","Flipkart","Uber"]',
-    setBars() { }, setCanGoBack() { }, haptic() { }, dynamicColors: () => null, voice(id) { atlasCb(id, false, "no voice"); },
+    setBars() { }, setCanGoBack() { }, haptic() { }, openAssistantSettings() { }, dynamicColors: () => null, voice(id) { atlasCb(id, false, "no voice"); },
     scan(id) { setTimeout(() => atlasCb(id, true, "ok"), 300); }, stats: () => JSON.stringify({ files: files.length, bytes: 1e9, kinds: { image: { n: 3, b: 4e6 }, pdf: { n: 2, b: 3e5 }, video: { n: 1, b: 9e8 }, apk: { n: 1, b: 2.2e7 }, doc: { n: 1, b: 9e4 } }, free: 180e9, cap: 512e9, analyzed: 0 }),
     search: (q, k) => { const it = files.filter(f => (!q || f.n.toLowerCase().includes(q.toLowerCase())) && (k === "any" || k === f.k || k === "todo" && (f.k === "image" || f.k === "pdf"))); return JSON.stringify({ total: it.length, bytes: it.reduce((a, b) => a + b.s, 0), items: it }); },
     listDir: p => JSON.stringify({ p: p || "/storage/emulated/0", rel: "Phone", up: "", dirs: [{ p: "/storage/emulated/0/Download", n: "Download", c: 3 }], files: files.slice(0, 2) }),
