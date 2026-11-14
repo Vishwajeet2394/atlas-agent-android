@@ -413,6 +413,7 @@ function detectApp(text) {
   return null;
 }
 function preopenApp(text, files) {
+  if (SIM) return null;                            // keep the test harness single-launch/deterministic
   if (files && files.length) return null;         // a file question isn't an errand
   if (!N.agentOn() || !N.agentBusy || N.agentBusy()) return null; // don't yank the screen if an errand is already running
   const key = detectApp(text);
