@@ -1,0 +1,45 @@
+--------- beginning of main
+11-14 10:42:50.332  3210  3584 I AtlasAgent: task: Search for Punjabi Dhaba, add 1 full Paneer Butter Masala and 3 butter naans to the cart, and complete the paymentup to the final payment screen. Complete it through the final step (place the order / pay / book) — Atlas asks the user to confirm before that last tap.
+11-14 10:42:50.417  3210  3210 I AtlasJS : LOG ATLAS_ACTIONS [{"type":"phone_task","app":"swiggy","goal":"Search for Punjabi Dhaba, add 1 full Paneer Butter Masala and 3 butter naans to the cart, and proceed to checkout up to the final payment screen."}] @380
+11-14 10:42:50.418  3210  3210 I AtlasJS : LOG ATLAS_REPLY Opening Swiggy to order one full Paneer Butter Masala and 3 butter naans from Punjabi Dhaba. @380
+11-14 10:42:50.418  3210  3210 I AtlasJS : LOG ATLAS_CARD {"kind":"tasks","items":[],"choices":[],"groups":[]} @31
+11-14 10:42:51.157  3585  3585 I AtlasSim: SCREEN {"name":"food_home","app":"swiggy"}
+11-14 10:42:52.735  3585  3585 I AtlasSim: POPUP {"shown":true,"app":"swiggy"}
+11-14 10:42:52.961  3210  3210 I AtlasJS : LOG ATLAS_DONE tasks=1 @39
+11-14 10:42:56.782  3210  3584 I AtlasAgent: step: Search for Punjabi Dhaba in Swiggy home screen search bar
+11-14 10:42:59.659  3210  3584 I AtlasAgent: step: Tap on Punjabi Dhaba from the nearby restaurants list
+11-14 10:42:59.694  3585  3585 I AtlasSim: SCREEN {"name":"menu:Punjabi Dhaba","app":"swiggy"}
+11-14 10:43:03.625  3210  3584 I AtlasAgent: step: Adding Paneer Butter Masala which is customisable.
+11-14 10:43:03.650  3585  3585 I AtlasSim: SHEET {"title":"Paneer Butter Masala","app":"swiggy"}
+11-14 10:43:06.255  3210  3584 I AtlasAgent: step: Select Full for Paneer Butter Masala and add it
+11-14 10:43:06.339  3585  3585 I AtlasSim: CART {"Paneer Butter Masala (Full)":1,"app":"swiggy"}
+11-14 10:43:06.397  3585  3585 I AtlasSim: SCREEN {"name":"menu:Punjabi Dhaba","app":"swiggy"}
+11-14 10:43:06.413  3210  3584 I AtlasAgent: step: Tapping “Add Item | ₹380”
+11-14 10:43:09.394  3210  3584 I AtlasAgent: step: Added Paneer Butter Masala. Now adding 3 butter naans.
+11-14 10:43:09.397  3585  3585 I AtlasSim: CART {"Paneer Butter Masala (Full)":1,"Butter Naan":1,"app":"swiggy"}
+11-14 10:43:09.422  3585  3585 I AtlasSim: SCREEN {"name":"menu:Punjabi Dhaba","app":"swiggy"}
+11-14 10:43:13.378  3210  3584 I AtlasAgent: step: Need 3 butter naans, currently 1 added. Tap '+' twice for butter naan, then view cart.
+11-14 10:43:13.381  3585  3585 I AtlasSim: CART {"Paneer Butter Masala (Full)":1,"Butter Naan":2,"app":"swiggy"}
+11-14 10:43:13.401  3585  3585 I AtlasSim: SCREEN {"name":"menu:Punjabi Dhaba","app":"swiggy"}
+11-14 10:43:13.565  3585  3585 I AtlasSim: CART {"Paneer Butter Masala (Full)":2,"Butter Naan":2,"app":"swiggy"}
+11-14 10:43:13.586  3585  3585 I AtlasSim: SCREEN {"name":"menu:Punjabi Dhaba","app":"swiggy"}
+11-14 10:43:13.594  3210  3584 I AtlasAgent: step: Tapping “+ (for: − · 1)”
+11-14 10:43:16.617  3210  3584 I AtlasAgent: step: Tap View Cart to review items and adjust quantities.
+11-14 10:43:16.633  3585  3585 I AtlasSim: SCREEN {"name":"cart","app":"swiggy"}
+11-14 10:43:19.563  3210  3584 I AtlasAgent: step: Adjust quantities in cart: 1 Paneer Butter Masala and 3 Butter Naans
+11-14 10:43:19.566  3585  3585 I AtlasSim: CART {"Paneer Butter Masala (Full)":1,"Butter Naan":2,"app":"swiggy"}
+11-14 10:43:19.576  3585  3585 I AtlasSim: SCREEN {"name":"cart","app":"swiggy"}
+11-14 10:43:19.709  3585  3585 I AtlasSim: CART {"Paneer Butter Masala (Full)":1,"Butter Naan":3,"app":"swiggy"}
+11-14 10:43:19.719  3585  3585 I AtlasSim: SCREEN {"name":"cart","app":"swiggy"}
+11-14 10:43:19.725  3210  3584 I AtlasAgent: step: Tapping “+ (for: − · 2)”
+11-14 10:43:22.425  3210  3584 I AtlasAgent: step: Cart is ready with 1 Paneer Butter Masala (Full) and 3 Butter Naans. Total ₹560. Confirming before proceeding to pay.
+11-14 10:43:24.293  3210  3584 I AtlasAgent: step: Cart has 1 Paneer Butter Masala (Full) and 3 butter naans. Ready to confirm.
+11-14 10:43:24.293  3210  3584 I AtlasAgent: confirm: Punjabi Dhaba: 1x Paneer Butter Masala (Full), 3x Butter Naan. Total: ₹560. Delivering to Gangapur Road, Nashik.
+11-14 10:43:24.303  3210  3584 I AtlasAgent: sim-answer: confirm -> confirm
+11-14 10:43:25.522  3585  3585 I AtlasSim: SCREEN {"name":"payment","app":"swiggy"}
+11-14 10:43:27.029  3210  3584 I AtlasAgent: confirmed: Punjabi Dhaba: 1x Paneer Butter Masala (Full), 3x Butter Naan. Total: ₹560. Delivering to Gangapur Road, Nashik.
+11-14 10:43:29.206  3210  3584 I AtlasAgent: step: User has confirmed. Tapping Pay ₹560 to complete the payment.
+11-14 10:43:29.209  3585  3585 I AtlasSim: ORDER {"items":{"Paneer Butter Masala (Full)":1,"Butter Naan":3},"total":560,"shop":"Punjabi Dhaba","mode":"food","app":"swiggy"}
+11-14 10:43:29.211  3585  3585 I AtlasSim: SCREEN {"name":"order_placed","app":"swiggy"}
+11-14 10:43:29.831  3210  3584 I AtlasAgent: done: Done — Order placed · added: Paneer Butter Masala 1 full, butter naans 3 | left: none
+11-14 10:43:31.335  3210  3584 I AtlasAgent: idle: All tasks finished

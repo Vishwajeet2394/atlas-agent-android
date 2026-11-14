@@ -1,0 +1,28 @@
+--------- beginning of main
+11-14 10:42:03.877  2721  3096 I AtlasAgent: task: Order 2 Chicken Biryani from Behrouz Biryani and place the order. Complete it through the final step (place the order / pay / book) — Atlas asks the user to confirm before that last tap.
+11-14 10:42:04.005  2721  2721 I AtlasJS : LOG ATLAS_ACTIONS [{"type":"phone_task","app":"swiggy","goal":"Order 2 Chicken Biryani from Behrouz Biryani and place the order."}] @380
+11-14 10:42:04.005  2721  2721 I AtlasJS : LOG ATLAS_REPLY Sure thing, Vishwajeet. I'm setting up your Swiggy order for 2 Chicken Biryanis from Behrouz Biryani. @380
+11-14 10:42:04.005  2721  2721 I AtlasJS : LOG ATLAS_CARD {"kind":"tasks","items":[],"choices":[],"groups":[]} @31
+11-14 10:42:04.712  3097  3097 I AtlasSim: SCREEN {"name":"food_home","app":"swiggy"}
+11-14 10:42:05.426  2721  2721 I AtlasJS : LOG ATLAS_DONE tasks=1 @39
+11-14 10:42:09.500  2721  3096 I AtlasAgent: step: Behrouz Biryani is visible on the home screen. Tapping it to open the restaurant menu.
+11-14 10:42:09.623  3097  3097 I AtlasSim: SCREEN {"name":"menu:Behrouz Biryani","app":"swiggy"}
+11-14 10:42:11.606  2721  3096 I AtlasAgent: step: I see Chicken Biryani. I'll add it to the cart and then increase the quantity to 2.
+11-14 10:42:11.623  3097  3097 I AtlasSim: CART {"Chicken Biryani":1,"app":"swiggy"}
+11-14 10:42:11.686  3097  3097 I AtlasSim: SCREEN {"name":"menu:Behrouz Biryani","app":"swiggy"}
+11-14 10:42:14.311  2721  3096 I AtlasAgent: step: I will increase the quantity of Chicken Biryani to 2 by tapping the '+' button.
+11-14 10:42:14.314  3097  3097 I AtlasSim: CART {"Chicken Biryani":2,"app":"swiggy"}
+11-14 10:42:14.330  3097  3097 I AtlasSim: SCREEN {"name":"menu:Behrouz Biryani","app":"swiggy"}
+11-14 10:42:16.355  2721  3096 I AtlasAgent: step: 2 Chicken Biryani added, now view cart and checkout.
+11-14 10:42:16.377  3097  3097 I AtlasSim: SCREEN {"name":"cart","app":"swiggy"}
+11-14 10:42:18.431  2721  3096 I AtlasAgent: step: Cart reviewed with 2 Chicken Biryani from Behrouz Biryani, total ₹743. Need to confirm before placing the order.
+11-14 10:42:20.288  2721  3096 I AtlasAgent: step: Cart shows 2 Chicken Biryani for ₹743. Ready to confirm.
+11-14 10:42:20.288  2721  3096 I AtlasAgent: confirm: Order: 2 Chicken Biryani from Behrouz Biryani, Total: ₹743, Delivery to Home: Gangapur Road, Nashik
+11-14 10:42:20.293  2721  3096 I AtlasAgent: sim-answer: confirm -> confirm
+11-14 10:42:21.508  3097  3097 I AtlasSim: SCREEN {"name":"payment","app":"swiggy"}
+11-14 10:42:23.013  2721  3096 I AtlasAgent: confirmed: Order: 2 Chicken Biryani from Behrouz Biryani, Total: ₹743, Delivery to Home: Gangapur Road, Nashik
+11-14 10:42:24.856  2721  3096 I AtlasAgent: step: Tapping Pay to complete the order with the selected payment method.
+11-14 10:42:24.859  3097  3097 I AtlasSim: ORDER {"items":{"Chicken Biryani":2},"total":743,"shop":"Behrouz Biryani","mode":"food","app":"swiggy"}
+11-14 10:42:24.861  3097  3097 I AtlasSim: SCREEN {"name":"order_placed","app":"swiggy"}
+11-14 10:42:25.478  2721  3096 I AtlasAgent: done: Done — Order placed · added: 2 Chicken Biryani | left: none
+11-14 10:42:26.979  2721  3096 I AtlasAgent: idle: All tasks finished
